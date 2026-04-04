@@ -200,6 +200,21 @@ export const CONTRACT_ABI = [
   },
   {
     type: "function",
+    name: "batchVoteWithNfc",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "paintingIds", type: "uint256[]" },
+      { name: "voteDirections", type: "bool[]" },
+      { name: "v", type: "uint8" },
+      { name: "r", type: "bytes32" },
+      { name: "s", type: "bytes32" },
+      { name: "hash", type: "bytes32" },
+      { name: "message", type: "bytes" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "addPaintingWithNfc",
     stateMutability: "nonpayable",
     inputs: [

@@ -39,11 +39,13 @@ export default function Navbar() {
           ))}
         </div>
 
-        <ConnectButton
-          showBalance={false}
-          chainStatus="icon"
-          accountStatus="avatar"
-        />
+        <div className="hidden sm:block">
+          <ConnectButton
+            showBalance={false}
+            chainStatus="icon"
+            accountStatus="avatar"
+          />
+        </div>
       </div>
     </nav>
   );

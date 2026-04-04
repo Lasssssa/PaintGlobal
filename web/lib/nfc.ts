@@ -77,6 +77,16 @@ export function encodeVoteMessage(id: number, support: boolean): string {
 }
 
 /**
+ * Encode N votes as a 3N-byte hex string for batchVoteWithNfc.
+ * Each 3-byte group: bytes 0-1 = painting ID (big-endian uint16), byte 2 = 0x01 (support) or 0x00 (pass).
+ */
+export function encodeBatchVoteMessage(votes: { id: number; support: boolean }[]): string {
+  return votes
+    .map(({ id, support }) => id.toString(16).padStart(4, "0") + (support ? "01" : "00"))
+    .join("");
+}
+
+/**
  * Ask the user to tap their HaLo bracelet and sign a hex message.
  * @param message Hex string without 0x prefix
  * @param onStatus Callback for UX feedback with platform-aware info
