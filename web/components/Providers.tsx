@@ -5,6 +5,7 @@ import { WagmiProvider } from "wagmi";
 import { RainbowKitProvider, lightTheme } from "@rainbow-me/rainbowkit";
 import { wagmiConfig } from "@/lib/web3";
 import { useState } from "react";
+import { NfcIdentityProvider } from "@/lib/nfc-context";
 
 import "@rainbow-me/rainbowkit/styles.css";
 
@@ -21,7 +22,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
             borderRadius: "medium",
           })}
         >
-          {children}
+          <NfcIdentityProvider>
+            {children}
+          </NfcIdentityProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
