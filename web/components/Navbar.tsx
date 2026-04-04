@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAccount, useReadContract } from "wagmi";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from "@/lib/contract";
 
 const NAV_LINKS = [
@@ -11,6 +12,7 @@ const NAV_LINKS = [
   { href: "/swipe", label: "Vote" },
   { href: "/upload", label: "Upload" },
   { href: "/leaderboard", label: "Leaderboard" },
+  { href: "/collection", label: "Collection" },
   { href: "/admin", label: "Admin", adminOnly: true },
 ];
 
@@ -73,6 +75,7 @@ export default function Navbar() {
                 {label}
               </Link>
             ))}
+            <ConnectButton accountStatus="avatar" chainStatus="icon" showBalance={false} />
           </div>
         </div>
       </nav>
@@ -123,6 +126,18 @@ export default function Navbar() {
             <rect x="3" y="13" width="3" height="8" rx="1.5" />
           </svg>
           Leaderboard
+        </Link>
+
+        <Link href="/collection" className={`bottom-nav-link ${pathname === "/collection" ? "active" : ""}`}>
+          <svg width="22" height="22" viewBox="0 0 24 24"
+            fill={pathname === "/collection" ? "currentColor" : "none"}
+            stroke="currentColor"
+            strokeWidth={pathname === "/collection" ? "2.2" : "1.8"}
+            strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="7" width="20" height="14" rx="2" />
+            <path d="M16 3h-8l-2 4h12l-2-4z" />
+          </svg>
+          Collection
         </Link>
 
         {isAdmin && (
