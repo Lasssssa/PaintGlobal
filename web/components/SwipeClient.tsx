@@ -147,6 +147,8 @@ function CardContent({ painting }: { painting: SwipePainting }) {
   );
 }
 
+const CANNES_BG = "https://ethglobal.b-cdn.net/events/cannes2026/images/ap57a/default.jpg";
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function SwipeClient() {
@@ -502,7 +504,21 @@ export default function SwipeClient() {
   const stack = paintings.slice(currentIndex, currentIndex + 2);
 
   return (
-    <main className="mx-auto w-full max-w-xl px-5 py-8">
+    <main className="mx-auto w-full max-w-xl px-5 py-8" style={{ position: "relative" }}>
+      {/* Peinture impressionniste en fond subtil */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          inset: 0,
+          backgroundImage: `url(${CANNES_BG})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center 30%",
+          opacity: 0.10,
+          zIndex: -1,
+          pointerEvents: "none",
+        }}
+      />
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-[-0.03em] text-ink">Swipe to Vote</h1>
         <span className="text-sm text-muted">

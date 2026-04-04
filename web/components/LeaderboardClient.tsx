@@ -2,8 +2,16 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useReadContract, useReadContracts } from "wagmi";
-import { CONTRACT_ADDRESS, CONTRACT_ABI, PAINTING_STATUS } from "@/lib/contract";
-import { fetchMetadata, fetchImageUrl, type PaintingMetadata } from "@/lib/storage";
+import {
+  CONTRACT_ADDRESS,
+  CONTRACT_ABI,
+  PAINTING_STATUS,
+} from "@/lib/contract";
+import {
+  fetchMetadata,
+  fetchImageUrl,
+  type PaintingMetadata,
+} from "@/lib/storage";
 
 interface RankedPainting {
   id: number;
@@ -13,7 +21,7 @@ interface RankedPainting {
 }
 
 function paintingTuple(
-  result: unknown
+  result: unknown,
 ): { uri: string; status: number } | null {
   if (result == null) return null;
   if (Array.isArray(result)) {
@@ -44,7 +52,7 @@ export default function LeaderboardClient() {
         functionName: "paintings" as const,
         args: [BigInt(i)] as const,
       })),
-    [n]
+    [n],
   );
 
   const voteContracts = useMemo(
@@ -55,7 +63,7 @@ export default function LeaderboardClient() {
         functionName: "votes" as const,
         args: [BigInt(i)] as const,
       })),
-    [n]
+    [n],
   );
 
   const { data: paintingReads } = useReadContracts({
@@ -70,7 +78,8 @@ export default function LeaderboardClient() {
 
   const loadLeaderboard = useCallback(async () => {
     if (countBn === undefined) return;
-    if (n > 0 && (paintingReads === undefined || voteCounts === undefined)) return;
+    if (n > 0 && (paintingReads === undefined || voteCounts === undefined))
+      return;
 
     setLoading(true);
     try {
@@ -83,7 +92,9 @@ export default function LeaderboardClient() {
         const imgSrc = fetchImageUrl(metadata.imageCID);
         const voteResult = voteCounts?.[index];
         const votes =
-          voteResult?.result !== undefined ? Number(voteResult.result as bigint) : 0;
+          voteResult?.result !== undefined
+            ? Number(voteResult.result as bigint)
+            : 0;
         items.push({ id: index, metadata, votes, imgSrc });
       }
       items.sort((a, b) => b.votes - a.votes);
@@ -97,73 +108,163 @@ export default function LeaderboardClient() {
     loadLeaderboard();
   }, [loadLeaderboard]);
 
+  const CANNES_BG =
+    "https://ethglobal.b-cdn.net/events/cannes2026/images/ap57a/default.jpg";
+
   return (
-    <main className="mx-auto w-full max-w-3xl px-5 py-8">
-      <h1 className="mb-1 text-3xl font-bold tracking-[-0.03em] text-ink">Leaderboard</h1>
-      <p className="mb-8 text-sm text-muted">Approved paintings ranked by on-chain support</p>
-
-      {loading && (
-        <div className="flex flex-col gap-4">
-          {[...Array(5)].map((_, i) => (
-            <div
-              key={i}
-              className="card-brutalist h-20 animate-pulse"
-              style={{ background: "linear-gradient(135deg, #f4f0ff, #e8e4f0)", boxShadow: "none" }}
-            />
-          ))}
+    <main>
+      {/* Painting header strip */}
+      <div
+        style={{ position: "relative", height: "160px", overflow: "hidden" }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundImage: `url(${CANNES_BG})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center 52%",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(to bottom, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.12) 60%, var(--color-paper) 100%)",
+          }}
+        />
+        <div
+          className="relative mx-auto flex h-full max-w-3xl flex-col justify-end px-5 pb-4"
+          style={{ zIndex: 1 }}
+        >
+          <h1
+            className="text-2xl font-bold tracking-tight sm:text-3xl"
+            style={{
+              color: "white",
+              textShadow: "0 2px 10px rgba(0,0,0,0.35)",
+              margin: 0,
+            }}
+          >
+            Leaderboard
+          </h1>
         </div>
-      )}
+      </div>
 
-      {!loading && ranked.length === 0 && (
-        <div className="empty-state">
-          <p className="text-base">No approved paintings with support yet.</p>
-        </div>
-      )}
+      <div className="mx-auto w-full max-w-3xl px-5 py-6">
+        {loading && (
+          <div className="flex flex-col gap-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={`skel-${i}`} className="skeleton h-20 rounded-2xl" />
+            ))}
+          </div>
+        )}
 
-      {!loading && ranked.length > 0 && (
-        <ol className="flex flex-col gap-4">
-          {ranked.map((p, index) => {
-            const isWinner = index === 0;
-            return (
-              <li
-                key={p.id}
-                className={`card-brutalist flex items-center gap-4 p-4 ${isWinner ? "border-2 border-line" : ""}`}
-                style={isWinner ? { boxShadow: "4px 4px 0 var(--color-winner)" } : { boxShadow: "none" }}
-              >
-                <span className="flex w-8 items-center justify-center text-xl font-bold text-ink">
-                  {isWinner ? (
-                    <span className="badge badge-winner">1st</span>
-                  ) : (
-                    `#${index + 1}`
-                  )}
-                </span>
+        {!loading && ranked.length === 0 && (
+          <div className="empty-state">
+            <p className="text-base">No support recorded yet.</p>
+          </div>
+        )}
 
-                <div className="h-14 w-14 shrink-0 overflow-hidden rounded-[var(--radius-sm)] border-2 border-line">
-                  {p.imgSrc ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.imgSrc} alt={p.metadata.title} className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-muted" style={{ background: "linear-gradient(135deg, #f4f0ff, #e8e4f0)" }}>
-                      🖼️
-                    </div>
-                  )}
-                </div>
+        {!loading && ranked.length > 0 && (
+          <ol className="flex flex-col gap-3">
+            {ranked.map((p, index) => {
+              const medals = ["🥇", "🥈", "🥉"];
+              const medalColors = [
+                "linear-gradient(135deg,#fbbf24,#f59e0b)",
+                "linear-gradient(135deg,#d1d5db,#9ca3af)",
+                "linear-gradient(135deg,#f97316,#c2410c)",
+              ];
+              const isTop3 = index < 3;
+              return (
+                <li
+                  key={p.id}
+                  className="card-brutalist flex items-center gap-3 p-3.5"
+                  style={{
+                    boxShadow: isTop3
+                      ? `0 2px 16px rgba(0,0,0,0.07), inset 0 0 0 1.5px ${
+                          index === 0
+                            ? "rgba(251,191,36,0.45)"
+                            : index === 1
+                              ? "rgba(209,213,219,0.6)"
+                              : "rgba(249,115,22,0.35)"
+                        }`
+                      : "0 1px 6px rgba(0,0,0,0.05)",
+                    animation: `fadeInUp 0.3s ${index * 0.04}s both`,
+                  }}
+                >
+                  {/* Rank */}
+                  <div className="flex w-9 shrink-0 items-center justify-center">
+                    {isTop3 ? (
+                      <span
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-sm"
+                        style={{
+                          background: medalColors[index],
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                        }}
+                      >
+                        {medals[index]}
+                      </span>
+                    ) : (
+                      <span className="font-mono text-sm font-bold text-muted">
+                        #{index + 1}
+                      </span>
+                    )}
+                  </div>
 
-                <div className="flex flex-1 flex-col gap-0.5 overflow-hidden">
-                  <span className="truncate font-bold text-ink">{p.metadata.title}</span>
-                  <span className="truncate font-mono text-xs text-muted">
-                    {p.metadata.author.slice(0, 6)}…{p.metadata.author.slice(-4)}
-                  </span>
-                </div>
+                  {/* Thumbnail */}
+                  <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl">
+                    {p.imgSrc ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={p.imgSrc}
+                        alt={p.metadata.title}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div
+                        className="flex h-full items-center justify-center text-muted"
+                        style={{
+                          background: "linear-gradient(135deg,#f4f0ff,#e0f2fe)",
+                        }}
+                      >
+                        🖼️
+                      </div>
+                    )}
+                  </div>
 
-                <span className="count-pill shrink-0">
-                  {p.votes} {p.votes !== 1 ? "supporters" : "supporter"}
-                </span>
-              </li>
-            );
-          })}
-        </ol>
-      )}
+                  {/* Info */}
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="truncate font-semibold leading-tight text-ink">
+                      {p.metadata.title}
+                    </span>
+                    <span className="truncate font-mono text-xs text-muted">
+                      {p.metadata.author.slice(0, 6)}…
+                      {p.metadata.author.slice(-4)}
+                    </span>
+                  </div>
+
+                  {/* Votes */}
+                  <div className="shrink-0 text-right">
+                    <p
+                      className="font-mono font-black leading-none"
+                      style={{
+                        fontSize: "1.15rem",
+                        color: index === 0 ? "#f59e0b" : "var(--color-ink)",
+                      }}
+                    >
+                      {p.votes}
+                    </p>
+                    <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">
+                      votes
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </div>
     </main>
   );
 }
