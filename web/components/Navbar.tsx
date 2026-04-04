@@ -8,6 +8,7 @@ const NAV_LINKS = [
   { href: "/", label: "Gallery" },
   { href: "/upload", label: "Upload" },
   { href: "/leaderboard", label: "Leaderboard" },
+  { href: "/admin", label: "Admin" },
 ];
 
 export default function Navbar() {

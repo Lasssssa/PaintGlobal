@@ -8,18 +8,25 @@ import { isNfcAvailable, signWithNfc, encodePaintingId, type NfcStatusEvent } fr
 
 interface Props {
   paintingId: number;
+  author: `0x${string}`;
   metadata: PaintingMetadata;
   voteCount: number;
   onVoted?: () => void;
 }
 
-export default function PaintingCard({ paintingId, metadata, voteCount, onVoted }: Props) {
+function sameAddress(a: string | undefined, b: string) {
+  if (!a) return false;
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+export default function PaintingCard({ paintingId, author, metadata, voteCount, onVoted }: Props) {
   const { address, isConnected } = useAccount();
   const [notification, setNotification] = useState("");
   const [nfcStatus, setNfcStatus] = useState<"idle" | "scanning" | "submitting">("idle");
   const [hasNfc, setHasNfc] = useState(false);
 
-  console.log(metadata);
+  const isAuthor = sameAddress(address, author);
+
   useEffect(() => {
     setHasNfc(isNfcAvailable());
   }, []);
@@ -48,9 +55,12 @@ export default function PaintingCard({ paintingId, metadata, voteCount, onVoted 
 
   useEffect(() => {
     if (writeError) {
-      const msg = writeError.message.includes("already voted")
-        ? "You already supported this painting."
-        : "Something went wrong.";
+      const raw = writeError.message;
+      let msg: string;
+      if (raw.includes("cannot vote own")) msg = "You cannot support your own painting.";
+      else if (raw.includes("already voted")) msg = "You already supported this painting.";
+      else if (raw.includes("not approved")) msg = "This painting is not open for support.";
+      else msg = "Something went wrong.";
       setNotification(msg);
       setTimeout(() => setNotification(""), 4000);
     }
@@ -71,7 +81,6 @@ export default function PaintingCard({ paintingId, metadata, voteCount, onVoted 
       const message = encodePaintingId(paintingId);
       const sig = await signWithNfc(message, (evt: NfcStatusEvent) => {
         if (evt.cause === "init") {
-          // On iOS (credential), the OS shows a native NFC sheet
           setNotification(
             evt.method === "credential"
               ? "Hold your iPhone near the bracelet…"
@@ -109,8 +118,12 @@ export default function PaintingCard({ paintingId, metadata, voteCount, onVoted 
       const msg = err instanceof Error ? err.message : "NFC support failed";
       const name = err instanceof Error ? err.name : "";
       let display: string;
-      if (msg.includes("already voted")) {
+      if (msg.includes("cannot vote own")) {
+        display = "You cannot support your own painting.";
+      } else if (msg.includes("already voted")) {
         display = "This bracelet already supported this painting.";
+      } else if (msg.includes("not approved")) {
+        display = "This painting is not open for support.";
       } else if (name === "NFCMethodNotSupported") {
         display = "NFC is not supported on this device.";
       } else if (name === "NFCPermissionRequestDenied") {
@@ -161,6 +174,8 @@ export default function PaintingCard({ paintingId, metadata, voteCount, onVoted 
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
               Supported
             </span>
+          ) : isConnected && isAuthor ? (
+            <span className="text-xs text-muted">Your painting — support from others only</span>
           ) : isConnected ? (
             <button
               onClick={handleVote}
@@ -171,14 +186,18 @@ export default function PaintingCard({ paintingId, metadata, voteCount, onVoted 
             </button>
           ) : null}
 
-          {hasNfc && (
+          {hasNfc && !isAuthor && (
             <button
               onClick={handleNfcVote}
-              disabled={isNfcBusy}
+              disabled={isNfcBusy || !!alreadyVoted}
               className="btn-brutalist"
             >
               {isNfcBusy ? (nfcStatus === "scanning" ? "Tap…" : "…") : "Tap NFC"}
             </button>
+          )}
+
+          {hasNfc && isAuthor && (
+            <span className="text-xs text-muted">NFC support disabled for your work</span>
           )}
 
           {!isConnected && !hasNfc && (

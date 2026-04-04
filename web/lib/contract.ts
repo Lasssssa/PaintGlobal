@@ -1,19 +1,24 @@
 /**
  * Smart contract address & ABI for PaintVote.
  *
- * After deploying PaintVote.sol, replace CONTRACT_ADDRESS with the real address.
- * The ABI below matches the deployed contract exactly.
+ * After deploying PaintVote.sol, set NEXT_PUBLIC_CONTRACT_ADDRESS to the deployed address.
  */
-
 // ── Address ──────────────────────────────────────────────────────────────────
-// Replace with your deployed contract address on ARC Testnet (or any EVM chain)
 export const CONTRACT_ADDRESS =
   (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`) ??
   "0x0000000000000000000000000000000000000000";
 
-// ── ABI ──────────────────────────────────────────────────────────────────────
+/** Enum values match contract `PaintVote.Status` */
+export const PAINTING_STATUS = {
+  Pending: 0,
+  Approved: 1,
+  Rejected: 2,
+} as const;
+
+export type PaintingStatus = (typeof PAINTING_STATUS)[keyof typeof PAINTING_STATUS];
+
+// ── ABI ─────────────────────────────────────────────────────────────────────
 export const CONTRACT_ABI = [
-  // Events
   {
     type: "event",
     name: "PaintingAdded",
@@ -25,13 +30,64 @@ export const CONTRACT_ABI = [
   },
   {
     type: "event",
+    name: "PaintingApproved",
+    inputs: [
+      { name: "id", type: "uint256", indexed: true },
+      { name: "author", type: "address", indexed: true },
+    ],
+  },
+  {
+    type: "event",
+    name: "PaintingRejected",
+    inputs: [
+      { name: "id", type: "uint256", indexed: true },
+      { name: "author", type: "address", indexed: true },
+    ],
+  },
+  {
+    type: "event",
     name: "Voted",
     inputs: [
       { name: "paintingId", type: "uint256", indexed: true },
       { name: "voter", type: "address", indexed: true },
     ],
   },
-  // Write
+  {
+    type: "event",
+    name: "OwnershipTransferred",
+    inputs: [
+      { name: "previousOwner", type: "address", indexed: true },
+      { name: "newOwner", type: "address", indexed: true },
+    ],
+  },
+  {
+    type: "function",
+    name: "owner",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "transferOwnership",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newOwner", type: "address" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "id", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "reject",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "id", type: "uint256" }],
+    outputs: [],
+  },
   {
     type: "function",
     name: "addPainting",
@@ -46,20 +102,34 @@ export const CONTRACT_ABI = [
     inputs: [{ name: "paintingId", type: "uint256" }],
     outputs: [],
   },
-  // Read
   {
     type: "function",
-    name: "getPaintings",
+    name: "paintings",
     stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "string[]" }],
+    inputs: [{ name: "", type: "uint256" }],
+    outputs: [
+      { name: "uri", type: "string" },
+      { name: "author", type: "address" },
+      { name: "status", type: "uint8" },
+    ],
   },
   {
     type: "function",
-    name: "paintingURIs",
+    name: "getPainting",
     stateMutability: "view",
-    inputs: [{ name: "", type: "uint256" }],
-    outputs: [{ name: "", type: "string" }],
+    inputs: [{ name: "id", type: "uint256" }],
+    outputs: [
+      { name: "uri", type: "string" },
+      { name: "author", type: "address" },
+      { name: "status", type: "uint8" },
+    ],
+  },
+  {
+    type: "function",
+    name: "paintingCount",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
   },
   {
     type: "function",
@@ -80,12 +150,18 @@ export const CONTRACT_ABI = [
   },
   {
     type: "function",
-    name: "paintingCount",
+    name: "hasApprovedSubmission",
     stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256" }],
+    inputs: [{ name: "", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
   },
-  // NFC Write (gasless via relayer)
+  {
+    type: "function",
+    name: "hasPendingSubmission",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
   {
     type: "function",
     name: "voteWithNfc",

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useReadContract, useReadContracts } from "wagmi";
-import { CONTRACT_ADDRESS, CONTRACT_ABI } from "@/lib/contract";
+import { CONTRACT_ADDRESS, CONTRACT_ABI, PAINTING_STATUS } from "@/lib/contract";
 import { fetchMetadata, fetchImageUrl, type PaintingMetadata } from "@/lib/storage";
 
 interface RankedPainting {
@@ -12,51 +12,86 @@ interface RankedPainting {
   imgSrc: string;
 }
 
+function paintingTuple(
+  result: unknown
+): { uri: string; status: number } | null {
+  if (result == null) return null;
+  if (Array.isArray(result)) {
+    const [uri, , status] = result as [string, `0x${string}`, number];
+    return { uri, status: Number(status) };
+  }
+  const o = result as { uri: string; status: number };
+  return { uri: o.uri, status: Number(o.status) };
+}
+
 export default function LeaderboardClient() {
   const [ranked, setRanked] = useState<RankedPainting[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const { data: uris } = useReadContract({
+  const { data: countBn } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
-    functionName: "getPaintings",
+    functionName: "paintingCount",
   });
 
-  const { data: voteCounts } = useReadContracts({
-    contracts:
-      (uris as string[] | undefined)?.map((_, i) => ({
+  const n = countBn !== undefined ? Number(countBn) : 0;
+
+  const paintingContracts = useMemo(
+    () =>
+      Array.from({ length: n }, (_, i) => ({
+        address: CONTRACT_ADDRESS,
+        abi: CONTRACT_ABI,
+        functionName: "paintings" as const,
+        args: [BigInt(i)] as const,
+      })),
+    [n]
+  );
+
+  const voteContracts = useMemo(
+    () =>
+      Array.from({ length: n }, (_, i) => ({
         address: CONTRACT_ADDRESS,
         abi: CONTRACT_ABI,
         functionName: "votes" as const,
         args: [BigInt(i)] as const,
-      })) ?? [],
+      })),
+    [n]
+  );
+
+  const { data: paintingReads } = useReadContracts({
+    contracts: paintingContracts,
+    query: { enabled: n >= 0 },
+  });
+
+  const { data: voteCounts } = useReadContracts({
+    contracts: voteContracts,
+    query: { enabled: n >= 0 },
   });
 
   const loadLeaderboard = useCallback(async () => {
-    if (!uris || !voteCounts) {
-      setLoading(false);
-      return;
-    }
+    if (countBn === undefined) return;
+    if (n > 0 && (paintingReads === undefined || voteCounts === undefined)) return;
+
     setLoading(true);
     try {
-      const items = await Promise.all(
-        (uris as string[]).map(async (uri, index) => {
-          const metadata = await fetchMetadata(uri);
-          if (!metadata) return null;
-          const imgSrc = fetchImageUrl(metadata.imageCID);
-          const voteResult = voteCounts[index];
-          const votes =
-            voteResult?.result !== undefined ? Number(voteResult.result as bigint) : 0;
-          return { id: index, metadata, votes, imgSrc };
-        })
-      );
-      const valid = items.filter(Boolean) as RankedPainting[];
-      valid.sort((a, b) => b.votes - a.votes);
-      setRanked(valid);
+      const items: RankedPainting[] = [];
+      for (let index = 0; index < n; index++) {
+        const row = paintingTuple(paintingReads?.[index]?.result);
+        if (!row || row.status !== PAINTING_STATUS.Approved) continue;
+        const metadata = await fetchMetadata(row.uri);
+        if (!metadata) continue;
+        const imgSrc = fetchImageUrl(metadata.imageCID);
+        const voteResult = voteCounts?.[index];
+        const votes =
+          voteResult?.result !== undefined ? Number(voteResult.result as bigint) : 0;
+        items.push({ id: index, metadata, votes, imgSrc });
+      }
+      items.sort((a, b) => b.votes - a.votes);
+      setRanked(items);
     } finally {
       setLoading(false);
     }
-  }, [uris, voteCounts]);
+  }, [countBn, n, paintingReads, voteCounts]);
 
   useEffect(() => {
     loadLeaderboard();
@@ -65,7 +100,7 @@ export default function LeaderboardClient() {
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-8">
       <h1 className="mb-1 text-3xl font-bold tracking-[-0.03em] text-ink">Leaderboard</h1>
-      <p className="mb-8 text-sm text-muted">Paintings ranked by on-chain support</p>
+      <p className="mb-8 text-sm text-muted">Approved paintings ranked by on-chain support</p>
 
       {loading && (
         <div className="flex flex-col gap-4">
@@ -81,7 +116,7 @@ export default function LeaderboardClient() {
 
       {!loading && ranked.length === 0 && (
         <div className="empty-state">
-          <p className="text-base">No support yet.</p>
+          <p className="text-base">No approved paintings with support yet.</p>
         </div>
       )}
 
