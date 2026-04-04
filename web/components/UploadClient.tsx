@@ -14,13 +14,27 @@ type Step =
   | "done"
   | "error";
 
-const STEP_LABELS: Record<Step, string> = {
+const ACTIVE_STEPS: Step[] = [
+  "uploading-image",
+  "uploading-meta",
+  "nfc-signing",
+  "nfc-submitting",
+];
+
+const STEP_LABELS: { step: Step; label: string }[] = [
+  { step: "uploading-image", label: "Upload image → IPFS" },
+  { step: "uploading-meta", label: "Upload metadata → IPFS" },
+  { step: "nfc-signing", label: "Tap your bracelet" },
+  { step: "nfc-submitting", label: "Recording on-chain" },
+];
+
+const BUTTON_LABELS: Partial<Record<Step, string>> = {
   idle: "Publish via NFC bracelet",
-  "uploading-image": "Uploading image to IPFS…",
-  "uploading-meta": "Uploading metadata to IPFS…",
-  "nfc-signing": "Waiting for NFC scan…",
+  "uploading-image": "Uploading…",
+  "uploading-meta": "Uploading…",
+  "nfc-signing": "Waiting for NFC…",
   "nfc-submitting": "Recording on-chain…",
-  done: "Submitted for review!",
+  done: "Submitted!",
   error: "Try again",
 };
 
@@ -39,6 +53,8 @@ export default function UploadClient() {
     setHasNfc(isNfcAvailable());
   }, []);
 
+  const currentStepIndex = ACTIVE_STEPS.indexOf(step);
+
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -48,7 +64,7 @@ export default function UploadClient() {
     reader.readAsDataURL(f);
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: { preventDefault(): void }) => {
     e.preventDefault();
     if (!file || !title.trim()) return;
 
@@ -120,7 +136,7 @@ export default function UploadClient() {
     }
   };
 
-  const isLoading = step !== "idle" && step !== "done" && step !== "error";
+  const isLoading = currentStepIndex >= 0;
 
   if (!hasNfc) {
     return (
@@ -145,8 +161,8 @@ export default function UploadClient() {
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         <div
-          onClick={() => fileInputRef.current?.click()}
-          className="card-brutalist relative flex aspect-[16/10] cursor-pointer flex-col items-center justify-center"
+          onClick={() => !isLoading && fileInputRef.current?.click()}
+          className="card-brutalist relative flex aspect-[16/10] cursor-pointer flex-col items-center justify-center overflow-hidden"
           style={!preview ? { background: "linear-gradient(135deg, #f4f0ff, #e8e4f0)" } : undefined}
         >
           {preview ? (
@@ -175,35 +191,42 @@ export default function UploadClient() {
             onChange={(e) => setTitle(e.target.value)}
             placeholder="My masterpiece"
             maxLength={80}
+            disabled={isLoading}
             className="input-brutalist"
           />
         </div>
 
+        {/* Progress steps */}
         {isLoading && (
-          <div className="card-brutalist p-4" style={{ boxShadow: "none" }}>
-            <div className="flex flex-col gap-2 text-sm">
-              <StepRow
-                label="Upload image → IPFS"
-                done={step !== "uploading-image"}
-                active={step === "uploading-image"}
-              />
-              <StepRow
-                label="Upload metadata → IPFS"
-                done={["nfc-signing", "nfc-submitting"].includes(step)}
-                active={step === "uploading-meta"}
-              />
-              <StepRow
-                label="Tap your bracelet"
-                done={step === "nfc-submitting"}
-                active={step === "nfc-signing"}
-              />
-              <StepRow
-                label="Recording on-chain"
-                done={false}
-                active={step === "nfc-submitting"}
-              />
-            </div>
-          </div>
+          <ol className="flex flex-col gap-3 rounded-[var(--radius-sm)] border-2 border-line bg-ink/3 p-4">
+            {STEP_LABELS.map(({ step: s, label }, idx) => {
+              const done = idx < currentStepIndex;
+              const active = idx === currentStepIndex;
+              return (
+                <li key={s} className="flex items-center gap-3">
+                  {/* Step circle */}
+                  <span
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold ${
+                      done
+                        ? "border-success bg-success text-white"
+                        : active
+                        ? "border-accent bg-accent text-white animate-pulse"
+                        : "border-line bg-paper text-muted"
+                    }`}
+                  >
+                    {done ? "✓" : idx + 1}
+                  </span>
+                  <span
+                    className={`text-sm font-semibold ${
+                      done ? "text-success" : active ? "text-accent" : "text-muted"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
         )}
 
         {step === "done" && (
@@ -223,18 +246,9 @@ export default function UploadClient() {
           disabled={!file || !title.trim() || isLoading || step === "done"}
           className="btn-brutalist btn-primary justify-center py-3 text-base"
         >
-          {STEP_LABELS[step]}
+          {BUTTON_LABELS[step] ?? "Publish via NFC bracelet"}
         </button>
       </form>
     </main>
-  );
-}
-
-function StepRow({ label, done, active }: { label: string; done: boolean; active: boolean }) {
-  return (
-    <div className={`flex items-center gap-2 ${done ? "text-success font-semibold" : active ? "text-accent animate-pulse font-semibold" : "text-muted"}`}>
-      <span>{done ? "✓" : active ? "⟳" : "○"}</span>
-      <span>{label}</span>
-    </div>
   );
 }
