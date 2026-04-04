@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Providers from "./Providers";
 import Navbar from "./Navbar";
+import NfcGuard from "./NfcGuard";
 
 export default function ClientShell({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
@@ -20,8 +21,10 @@ export default function ClientShell({ children }: { children: React.ReactNode })
   return (
     <Providers>
       <Navbar />
-      {/* pb-16 sur mobile pour laisser de la place à la bottom nav fixe */}
-      <div className="flex flex-1 flex-col pb-16 sm:pb-0">{children}</div>
+      <NfcGuard>
+        {/* pb-16 sur mobile pour laisser de la place à la bottom nav fixe */}
+        <div className="flex flex-1 flex-col pb-16 sm:pb-0">{children}</div>
+      </NfcGuard>
     </Providers>
   );
 }

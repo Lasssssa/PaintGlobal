@@ -43,7 +43,11 @@ export default function PaintingCard({ paintingId, metadata, voteCount }: Props)
     !!nfcAddress &&
     nfcAddress.toLowerCase() === metadata.author.toLowerCase();
 
-  const { data: alreadyMinted } = useReadContract({
+  // justMinted : flag local pour cacher le bouton immédiatement après le mint,
+  // sans attendre la confirmation on-chain (latence réseau).
+  const [justMinted, setJustMinted] = useState(false);
+
+  const { data: alreadyMinted, refetch: refetchMinted } = useReadContract({
     address: NFT_CONTRACT_ADDRESS,
     abi: NFT_CONTRACT_ABI,
     functionName: "paintingMinted",
@@ -109,11 +113,9 @@ export default function PaintingCard({ paintingId, metadata, voteCount }: Props)
       if (!res.ok) throw new Error(data.error ?? "Mint relay failed");
 
       setMintStep("done");
-      setMintNote("NFT minted!");
-      setTimeout(() => {
-        setMintStep("idle");
-        setMintNote("");
-      }, 4000);
+      setMintNote("NFT minted! 🎉");
+      setJustMinted(true);   // cache le bouton immédiatement
+      refetchMinted();        // resynchronise avec la chain en arrière-plan
     } catch (err) {
       const name = err instanceof Error ? err.name : "";
       let msg = err instanceof Error ? err.message : "Mint failed";
@@ -141,7 +143,8 @@ export default function PaintingCard({ paintingId, metadata, voteCount }: Props)
     error: "Try again",
   };
 
-  const showMintButton = isAuthor && !alreadyMinted;
+  // Cache le bouton si: déjà minté on-chain OU vient d'être minté localement
+  const showMintButton = isAuthor && !alreadyMinted && !justMinted;
 
   return (
     <div className="card-brutalist flex flex-col">
@@ -175,33 +178,28 @@ export default function PaintingCard({ paintingId, metadata, voteCount }: Props)
           {metadata.author.slice(0, 6)}…{metadata.author.slice(-4)}
         </p>
 
-        {alreadyMinted && (
-          <span className="mt-1 inline-flex items-center gap-1.5 rounded-full border-2 border-green-200 bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
-            ✓ Minted
-          </span>
+        {showMintButton && !busy && (
+          <button
+            type="button"
+            onClick={handleMint}
+            className="btn-brutalist btn-primary mt-1 w-full text-sm"
+          >
+            Mint NFT
+          </button>
         )}
 
-        {showMintButton && (
-          <>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={handleMint}
-              className="btn-brutalist btn-primary mt-1 w-full text-sm"
-            >
-              {buttonLabel[mintStep]}
-            </button>
+        {busy && (
+          <div className="mt-1 flex items-center justify-center gap-2 rounded-[var(--radius-sm)] border-2 border-line py-2 text-xs font-semibold text-muted">
+            <svg className="animate-spin h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+            </svg>
+            {buttonLabel[mintStep]}
+          </div>
+        )}
 
-            {mintNote && (
-              <p className={`text-xs font-semibold ${
-                mintStep === "error" ? "text-danger"
-                : mintStep === "done" ? "text-green-600"
-                : "text-accent animate-pulse"
-              }`}>
-                {mintNote}
-              </p>
-            )}
-          </>
+        {mintStep === "error" && mintNote && (
+          <p className="text-xs font-semibold text-danger">{mintNote}</p>
         )}
       </div>
     </div>

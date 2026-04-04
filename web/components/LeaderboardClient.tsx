@@ -16,20 +16,21 @@ import {
 interface RankedPainting {
   id: number;
   metadata: PaintingMetadata;
+  author: string;
   votes: number;
   imgSrc: string;
 }
 
 function paintingTuple(
   result: unknown,
-): { uri: string; status: number } | null {
+): { uri: string; author: string; status: number } | null {
   if (result == null) return null;
   if (Array.isArray(result)) {
-    const [uri, , status] = result as [string, `0x${string}`, number];
-    return { uri, status: Number(status) };
+    const [uri, author, status] = result as [string, string, number];
+    return { uri, author, status: Number(status) };
   }
-  const o = result as { uri: string; status: number };
-  return { uri: o.uri, status: Number(o.status) };
+  const o = result as { uri: string; author: string; status: number };
+  return { uri: o.uri, author: o.author, status: Number(o.status) };
 }
 
 export default function LeaderboardClient() {
@@ -95,7 +96,7 @@ export default function LeaderboardClient() {
           voteResult?.result !== undefined
             ? Number(voteResult.result as bigint)
             : 0;
-        items.push({ id: index, metadata, votes, imgSrc });
+        items.push({ id: index, metadata, author: row.author, votes, imgSrc });
       }
       items.sort((a, b) => b.votes - a.votes);
       setRanked(items);
@@ -239,8 +240,7 @@ export default function LeaderboardClient() {
                       {p.metadata.title}
                     </span>
                     <span className="truncate font-mono text-xs text-muted">
-                      {p.metadata.author.slice(0, 6)}…
-                      {p.metadata.author.slice(-4)}
+                      {p.author.slice(0, 6)}…{p.author.slice(-4)}
                     </span>
                   </div>
 
