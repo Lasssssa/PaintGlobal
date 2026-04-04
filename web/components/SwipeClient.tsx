@@ -3,15 +3,16 @@
 import { useState, useEffect, useCallback, useMemo, useContext, useRef } from "react";
 import type { ReactNode, PointerEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useReadContract, useReadContracts } from "wagmi";
 import { CONTRACT_ADDRESS, CONTRACT_ABI, PAINTING_STATUS } from "@/lib/contract";
 import { fetchMetadata, fetchImageUrl, type PaintingMetadata } from "@/lib/storage";
-import { isNfcAvailable, signWithNfc, encodeVoteMessage, type NfcStatusEvent } from "@/lib/nfc";
+import { isNfcAvailable, signWithNfc, encodeBatchVoteMessage, type NfcStatusEvent } from "@/lib/nfc";
 import { NfcIdentityContext } from "@/lib/nfc-context";
 
-// ── Swipe card (no external dependency) ──────────────────────────────────────
+// ── Swipe card (pointer-events, no external dependency) ───────────────────────
 
-const SWIPE_THRESHOLD = 80; // px
+const SWIPE_THRESHOLD = 80;
 
 function SwipeCard({
   onSwipe,
@@ -61,10 +62,10 @@ function SwipeCard({
     if (Math.abs(d) >= SWIPE_THRESHOLD && !disabled) {
       const dir = d > 0 ? "right" : "left";
       if (cardRef.current) {
-        cardRef.current.style.transition = "transform 0.35s ease";
+        cardRef.current.style.transition = "transform 0.3s ease";
         cardRef.current.style.transform = `translateX(${dir === "right" ? 600 : -600}px) rotate(${dir === "right" ? 25 : -25}deg)`;
       }
-      setTimeout(() => onSwipe(dir), 350);
+      setTimeout(() => onSwipe(dir), 300);
     } else {
       resetCard();
     }
@@ -86,12 +87,18 @@ function SwipeCard({
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Phase = "nfc-unavailable" | "identity" | "loading" | "swiping" | "empty" | "error";
+type Phase = "nfc-unavailable" | "identity" | "loading" | "swiping" | "all-swiped" | "error";
+type SaveStatus = "idle" | "scanning" | "submitting" | "done" | "error";
 
 interface SwipePainting {
   id: number;
   author: `0x${string}`;
   metadata: PaintingMetadata;
+}
+
+interface PendingVote {
+  paintingId: number;
+  support: boolean;
 }
 
 function paintingTuple(
@@ -106,14 +113,51 @@ function paintingTuple(
   return { uri: o.uri, author: o.author, status: Number(o.status) };
 }
 
+// ── Card content (shared between top and background card) ─────────────────────
+
+function CardContent({ painting }: { painting: SwipePainting }) {
+  return (
+    <div className="card-brutalist w-full">
+      <div className="relative border-b-2 border-line" style={{ aspectRatio: "4/3" }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={fetchImageUrl(painting.metadata.imageCID)}
+          alt={painting.metadata.title}
+          className="h-full w-full object-cover"
+          draggable={false}
+        />
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-between px-6">
+          <span className="rounded-lg border-4 border-danger px-4 py-2 text-lg font-black text-danger opacity-20 rotate-[-15deg]">
+            PASS
+          </span>
+          <span className="rounded-lg border-4 border-success px-4 py-2 text-lg font-black text-success opacity-20 rotate-[15deg]">
+            SUPPORT
+          </span>
+        </div>
+      </div>
+      <div className="p-5">
+        <h2 className="text-xl font-bold tracking-[-0.02em] text-ink line-clamp-1">
+          {painting.metadata.title}
+        </h2>
+        <p className="mt-1 font-mono text-xs text-muted">
+          {painting.author.slice(0, 6)}…{painting.author.slice(-4)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function SwipeClient() {
+  const router = useRouter();
   const { nfcAddress, setNfcAddress } = useContext(NfcIdentityContext);
   const [phase, setPhase] = useState<Phase>("identity");
   const [paintings, setPaintings] = useState<SwipePainting[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [nfcStatus, setNfcStatus] = useState<"idle" | "identity-scan" | "vote-scan" | "submitting">("idle");
+  const [pendingVotes, setPendingVotes] = useState<PendingVote[]>([]);
+  const [nfcStatus, setNfcStatus] = useState<"idle" | "identity-scan">("idle");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [notification, setNotification] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -122,7 +166,6 @@ export default function SwipeClient() {
     if (!available) {
       setPhase("nfc-unavailable");
     } else if (nfcAddress) {
-      // Already identified from a previous session interaction
       setPhase("loading");
     }
   }, [nfcAddress]);
@@ -190,12 +233,18 @@ export default function SwipeClient() {
     query: { enabled: phase === "loading" && n > 0 && !!nfcAddress },
   });
 
-  // ── Load paintings once contract data is ready ──────────────────────────────
+  // ── Load unswiped paintings ─────────────────────────────────────────────────
 
   const loadPaintings = useCallback(async () => {
     if (!nfcAddress) return;
     if (countBn === undefined) return;
-    if (n > 0 && (paintingReads === undefined || hasVotedReads === undefined || hasVotedNegativeReads === undefined)) return;
+    if (
+      n > 0 &&
+      (paintingReads === undefined ||
+        hasVotedReads === undefined ||
+        hasVotedNegativeReads === undefined)
+    )
+      return;
 
     try {
       const results: SwipePainting[] = [];
@@ -212,7 +261,7 @@ export default function SwipeClient() {
       }
       setPaintings(results);
       setCurrentIndex(0);
-      setPhase(results.length === 0 ? "empty" : "swiping");
+      setPhase(results.length === 0 ? "all-swiped" : "swiping");
     } catch (err) {
       console.error(err);
       setErrorMsg("Failed to load paintings. Please try again.");
@@ -258,16 +307,36 @@ export default function SwipeClient() {
     }
   };
 
-  // ── Swipe handler ───────────────────────────────────────────────────────────
+  // ── Local swipe (no NFC, just queue) ───────────────────────────────────────
 
-  const handleSwipe = useCallback(async (dir: "left" | "right", painting: SwipePainting) => {
-    const support = dir === "right";
+  const handleSwipe = useCallback((dir: "left" | "right", painting: SwipePainting) => {
+    setPendingVotes((prev) => [...prev, { paintingId: painting.id, support: dir === "right" }]);
+    setCurrentIndex((prev) => {
+      const next = prev + 1;
+      return next;
+    });
+  }, []);
+
+  // Update phase once all paintings have been swiped
+  useEffect(() => {
+    if (phase === "swiping" && paintings.length > 0 && currentIndex >= paintings.length) {
+      setPhase("all-swiped");
+    }
+  }, [currentIndex, paintings.length, phase]);
+
+  // ── Save preferences (one NFC tap, one batch tx) ───────────────────────────
+
+  const handleSave = async () => {
+    if (pendingVotes.length === 0) return;
     try {
-      setNfcStatus("vote-scan");
-      setNotification(support ? "Tap your bracelet to support…" : "Tap your bracelet to pass…");
+      setSaveStatus("scanning");
+      setNotification("Tap your bracelet to save…");
 
-      const message = encodeVoteMessage(painting.id, support);
-      const sig = await signWithNfc(message, (evt: NfcStatusEvent) => {
+      const batchMessage = encodeBatchVoteMessage(
+        pendingVotes.map(({ paintingId, support }) => ({ id: paintingId, support }))
+      );
+
+      const sig = await signWithNfc(batchMessage, (evt: NfcStatusEvent) => {
         if (evt.cause === "init") {
           setNotification(
             evt.method === "credential"
@@ -280,45 +349,38 @@ export default function SwipeClient() {
         if (evt.cause === "scanned") setNotification("Scanned!");
       });
 
-      setNfcStatus("submitting");
+      setSaveStatus("submitting");
       setNotification("Recording on-chain…");
 
-      const res = await fetch("/api/nfc/vote", {
+      const res = await fetch("/api/nfc/vote-batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          paintingId: painting.id,
-          support,
+          votes: pendingVotes,
           v: sig.v,
           r: sig.r,
           s: sig.s,
           hash: sig.hash,
-          message: `0x${message}`,
+          message: `0x${batchMessage}`,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Relay failed");
 
-      setNotification(support ? "Supported!" : "Passed.");
-      setTimeout(() => setNotification(""), 2000);
-
-      setCurrentIndex((prev) => {
-        const next = prev + 1;
-        if (next >= paintings.length) setTimeout(() => setPhase("empty"), 500);
-        return next;
-      });
+      setSaveStatus("done");
+      setNotification("Votes saved!");
+      setTimeout(() => router.push("/"), 2000);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Vote failed";
-      let display = msg.slice(0, 150);
-      if (msg.includes("already voted")) display = "You already voted on this painting.";
-      else if (msg.includes("cannot vote own")) display = "You cannot vote on your own painting.";
-      setNotification(display);
-      setTimeout(() => setNotification(""), 4000);
-    } finally {
-      setNfcStatus("idle");
+      const name = err instanceof Error ? err.name : "";
+      let msg = err instanceof Error ? err.message : "Save failed";
+      if (name === "NFCMethodNotSupported") msg = "NFC is not supported on this device.";
+      else if (name === "NFCPermissionRequestDenied") msg = "NFC permission denied.";
+      else if (msg.includes("already voted")) msg = "Some paintings were already voted on.";
+      setSaveStatus("error");
+      setNotification(msg.slice(0, 150));
     }
-  }, [paintings.length]);
+  };
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -371,21 +433,6 @@ export default function SwipeClient() {
     );
   }
 
-  if (phase === "empty") {
-    return (
-      <main className="mx-auto w-full max-w-xl px-5 py-8 text-center">
-        <h1 className="mb-4 text-3xl font-bold tracking-[-0.03em] text-ink">All done!</h1>
-        <div className="empty-state py-16">
-          <span className="mb-4 block text-4xl">✅</span>
-          <p className="mb-6 text-base text-muted">You&apos;ve voted on all available paintings.</p>
-          <Link href="/" className="btn-brutalist btn-primary no-underline">
-            Back to Gallery
-          </Link>
-        </div>
-      </main>
-    );
-  }
-
   if (phase === "error") {
     return (
       <main className="mx-auto w-full max-w-xl px-5 py-8 text-center">
@@ -400,11 +447,59 @@ export default function SwipeClient() {
     );
   }
 
-  // Swiping phase
-  const current = paintings[currentIndex];
-  const isNfcBusy = nfcStatus !== "idle";
+  if (phase === "all-swiped") {
+    return (
+      <main className="mx-auto w-full max-w-xl px-5 py-8 text-center">
+        <h1 className="mb-2 text-3xl font-bold tracking-[-0.03em] text-ink">All reviewed!</h1>
+        <p className="mb-8 text-sm text-muted">
+          {pendingVotes.length > 0
+            ? `You have ${pendingVotes.length} vote${pendingVotes.length !== 1 ? "s" : ""} ready to save.`
+            : "No new votes to save."}
+        </p>
 
-  if (!current) return null;
+        {pendingVotes.length > 0 && (
+          <div className="card-brutalist flex flex-col items-center gap-5 p-8">
+            <span className="text-5xl">🗳️</span>
+            <p className="text-base font-semibold text-ink">
+              {pendingVotes.filter((v) => v.support).length} support ·{" "}
+              {pendingVotes.filter((v) => !v.support).length} pass
+            </p>
+
+            {saveStatus === "idle" || saveStatus === "error" ? (
+              <button
+                onClick={handleSave}
+                className="btn-brutalist btn-primary w-full justify-center py-3 text-base"
+              >
+                Save my preferences ({pendingVotes.length})
+              </button>
+            ) : saveStatus === "scanning" || saveStatus === "submitting" ? (
+              <div className="flex flex-col items-center gap-3">
+                <span className="text-sm text-accent animate-pulse font-semibold">{notification}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm font-semibold text-success">
+                ✓ {notification}
+              </div>
+            )}
+
+            {saveStatus === "error" && notification && (
+              <p className="text-sm text-danger">{notification}</p>
+            )}
+          </div>
+        )}
+
+        {pendingVotes.length === 0 && (
+          <Link href="/" className="btn-brutalist btn-primary no-underline">
+            Back to Gallery
+          </Link>
+        )}
+      </main>
+    );
+  }
+
+  // ── Swiping phase ───────────────────────────────────────────────────────────
+
+  const stack = paintings.slice(currentIndex, currentIndex + 2);
 
   return (
     <main className="mx-auto w-full max-w-xl px-5 py-8">
@@ -415,62 +510,69 @@ export default function SwipeClient() {
         </span>
       </div>
 
-      <SwipeCard onSwipe={(dir) => handleSwipe(dir, current)} disabled={isNfcBusy}>
-        <div className="card-brutalist w-full">
-          <div className="relative border-b-2 border-line" style={{ aspectRatio: "4/3" }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={fetchImageUrl(current.metadata.imageCID)}
-              alt={current.metadata.title}
-              className="h-full w-full object-cover"
-              draggable={false}
-            />
-            {/* Swipe direction hints */}
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-between px-6">
-              <span className="rounded-lg border-4 border-danger px-4 py-2 text-lg font-black text-danger opacity-20 rotate-[-15deg]">
-                PASS
-              </span>
-              <span className="rounded-lg border-4 border-success px-4 py-2 text-lg font-black text-success opacity-20 rotate-[15deg]">
-                SUPPORT
-              </span>
+      {/* Card stack — current on top, next pre-rendered behind */}
+      <div className="relative" style={{ minHeight: "420px" }}>
+        {stack.map((painting, stackIdx) => {
+          const isTop = stackIdx === 0;
+          return (
+            <div
+              key={painting.id}
+              className="absolute inset-0"
+              style={{
+                zIndex: isTop ? 2 : 1,
+                transform: isTop ? "scale(1) translateY(0)" : "scale(0.97) translateY(10px)",
+                transition: "transform 0.3s ease",
+                pointerEvents: isTop ? "auto" : "none",
+              }}
+            >
+              {isTop ? (
+                <SwipeCard onSwipe={(dir) => handleSwipe(dir, painting)}>
+                  <CardContent painting={painting} />
+                </SwipeCard>
+              ) : (
+                <CardContent painting={painting} />
+              )}
             </div>
-          </div>
-          <div className="p-5">
-            <h2 className="text-xl font-bold tracking-[-0.02em] text-ink line-clamp-1">
-              {current.metadata.title}
-            </h2>
-            <p className="mt-1 font-mono text-xs text-muted">
-              {current.author.slice(0, 6)}…{current.author.slice(-4)}
-            </p>
-          </div>
-        </div>
-      </SwipeCard>
+          );
+        })}
+      </div>
 
-      {notification && (
-        <div className="mt-4 rounded-[var(--radius-sm)] border-2 border-accent bg-accent-soft px-4 py-3 text-center text-sm font-semibold text-accent animate-pulse">
-          {notification}
-        </div>
-      )}
-
+      {/* Manual buttons */}
       <div className="mt-6 flex gap-4">
         <button
-          onClick={() => !isNfcBusy && handleSwipe("left", current)}
-          disabled={isNfcBusy}
+          onClick={() => stack[0] && handleSwipe("left", stack[0])}
           className="btn-brutalist flex-1 justify-center border-danger py-3 text-danger"
         >
           ✕ Pass
         </button>
         <button
-          onClick={() => !isNfcBusy && handleSwipe("right", current)}
-          disabled={isNfcBusy}
+          onClick={() => stack[0] && handleSwipe("right", stack[0])}
           className="btn-brutalist btn-primary flex-1 justify-center py-3"
         >
           ♥ Support
         </button>
       </div>
 
+      {/* Persistent save bar when there are pending votes */}
+      {pendingVotes.length > 0 && saveStatus === "idle" && (
+        <div className="mt-5 flex items-center justify-between rounded-[var(--radius-sm)] border-2 border-accent bg-accent-soft px-4 py-3">
+          <span className="text-sm font-semibold text-accent">
+            {pendingVotes.length} vote{pendingVotes.length !== 1 ? "s" : ""} pending
+          </span>
+          <button onClick={handleSave} className="btn-brutalist text-sm py-1.5 px-4">
+            Save my preferences
+          </button>
+        </div>
+      )}
+
+      {saveStatus !== "idle" && saveStatus !== "error" && notification && (
+        <div className="mt-5 rounded-[var(--radius-sm)] border-2 border-accent bg-accent-soft px-4 py-3 text-center text-sm font-semibold text-accent animate-pulse">
+          {notification}
+        </div>
+      )}
+
       <p className="mt-4 text-center text-xs text-muted">
-        Swipe the card or tap the buttons, then tap your bracelet to confirm.
+        Swipe or tap buttons · tap NFC once when ready to save
       </p>
     </main>
   );
