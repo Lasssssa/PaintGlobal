@@ -6,8 +6,11 @@ import "../src/PaintVote.sol";
 
 contract DeployPaintVote is Script {
     function run() external {
-        vm.startBroadcast();
-        new PaintVote();
+        uint256 pk = vm.envUint("PRIVATE_KEY");
+        address deployer = vm.addr(pk);
+
+        vm.startBroadcast(pk);
+        new PaintVote(deployer);
         vm.stopBroadcast();
     }
 }
