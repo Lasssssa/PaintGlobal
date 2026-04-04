@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-ink: #0a0a0b;
+  --color-paper: #faf8f5;
+  --color-muted: #5c5c66;
+  --color-line: #0a0a0b;
+  --color-accent: #7c3aed;
+  --color-accent-soft: #ede9fe;
+  --color-winner: #fcd34d;
+  --color-white: #ffffff;
+  --color-danger: #dc2626;
+  --color-danger-soft: #fef2f2;
+  --color-success: #16a34a;
+  --color-success-soft: #f0fdf4;
+
+  --radius-base: 16px;
+  --radius-sm: 10px;
+
+  --font-sans: "Instrument Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  font-family: var(--font-sans);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  line-height: 1.45;
+}
+
+/* Noise overlay — subtle paper texture */
+.noise {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  opacity: 0.035;
+  z-index: 1000;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Card */
+.card-brutalist {
+  border: 2px solid var(--color-line);
+  border-radius: var(--radius-base);
+  background: var(--color-white);
+  box-shadow: 4px 4px 0 var(--color-line);
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card-brutalist:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--color-line);
+}
+
+/* Button */
+.btn-brutalist {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.9rem;
+  border: 2px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--color-line);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  text-decoration: none;
+  color: var(--color-ink);
+}
+.btn-brutalist:hover  { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--color-line); }
+.btn-brutalist:active { transform: translate(1px, 1px);   box-shadow: 1px 1px 0 var(--color-line); }
+.btn-brutalist:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: 2px 2px 0 var(--color-line); }
+
+.btn-primary { background: var(--color-accent); color: var(--color-white); }
+.btn-primary:hover { box-shadow: 3px 3px 0 var(--color-line); }
+.btn-danger  { background: var(--color-danger);  color: var(--color-white); }
+.btn-success { background: var(--color-success); color: var(--color-white); }
+
+/* Input */
+.input-brutalist {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border: 2px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.9rem;
+  background: var(--color-white);
+  box-shadow: 2px 2px 0 var(--color-line);
+  color: var(--color-ink);
+}
+.input-brutalist::placeholder { color: var(--color-muted); opacity: 0.6; }
+.input-brutalist:focus { outline: none; box-shadow: 2px 2px 0 var(--color-accent); border-color: var(--color-accent); }
+.input-brutalist:disabled { opacity: 0.5; }
+
+/* Badge */
+.badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 4px 8px;
+  border: 2px solid var(--color-line);
+  border-radius: 999px;
+  background: var(--color-white);
+  display: inline-flex;
+  align-items: center;
+}
+.badge-accent  { background: var(--color-accent-soft); color: var(--color-accent); }
+.badge-winner  { background: var(--color-winner); }
+.badge-success { background: var(--color-success-soft); color: var(--color-success); }
+.badge-danger  { background: var(--color-danger-soft);  color: var(--color-danger); }
+.badge-muted   { background: var(--color-paper); color: var(--color-muted); }
+
+/* Count pill — monospace number chip */
+.count-pill {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border: 2px solid var(--color-line);
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  padding: 4rem 1.5rem;
+  border: 2px dashed var(--color-line);
+  border-radius: var(--radius-base);
+  color: var(--color-muted);
+}
+
+/* Section label */
+.section-title {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-muted);
+}
