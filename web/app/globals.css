@@ -5,8 +5,8 @@
   --color-paper: #faf8f5;
   --color-muted: #5c5c66;
   --color-line: #0a0a0b;
-  --color-accent: #7c3aed;
-  --color-accent-soft: #ede9fe;
+  --color-accent: #8b5cf6;
+  --color-accent-soft: #f0ebff;
   --color-winner: #fcd34d;
   --color-white: #ffffff;
   --color-danger: #dc2626;
@@ -83,7 +83,7 @@ body {
 .btn-brutalist:active { transform: translate(1px, 1px);   box-shadow: 1px 1px 0 var(--color-line); }
 .btn-brutalist:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: 2px 2px 0 var(--color-line); }
 
-.btn-primary { background: var(--color-accent); color: var(--color-white); }
+.btn-primary { background: linear-gradient(135deg, #8b5cf6, #a78bfa); color: var(--color-white); }
 .btn-primary:hover { box-shadow: 3px 3px 0 var(--color-line); }
 .btn-danger  { background: var(--color-danger);  color: var(--color-white); }
 .btn-success { background: var(--color-success); color: var(--color-white); }
@@ -95,14 +95,23 @@ body {
   border: 2px solid var(--color-line);
   border-radius: var(--radius-sm);
   font: inherit;
-  font-size: 0.9rem;
+  /* 1rem = 16px — empêche le zoom automatique sur iOS Safari */
+  font-size: 1rem;
   background: var(--color-white);
   box-shadow: 2px 2px 0 var(--color-line);
   color: var(--color-ink);
+  /* Désactive le double-tap zoom sur mobile sans bloquer le zoom utilisateur */
+  touch-action: manipulation;
 }
 .input-brutalist::placeholder { color: var(--color-muted); opacity: 0.6; }
 .input-brutalist:focus { outline: none; box-shadow: 2px 2px 0 var(--color-accent); border-color: var(--color-accent); }
 .input-brutalist:disabled { opacity: 0.5; }
+
+/* Empêche le double-tap zoom sur les boutons et liens sans bloquer le pinch-to-zoom */
+.btn-brutalist,
+a {
+  touch-action: manipulation;
+}
 
 /* Badge */
 .badge {
@@ -150,4 +159,41 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-muted);
+}
+
+/* ── Bottom navigation (mobile) ─────────────────────────────────────────── */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  background: var(--color-paper);
+  border-top: 2px solid var(--color-line);
+  /* safe area pour les téléphones avec encoche/barre de navigation */
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+  z-index: 50;
+}
+
+.bottom-nav-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 10px;
+  text-decoration: none;
+  color: var(--color-muted);
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.12s ease;
+  border-radius: var(--radius-sm);
+}
+
+.bottom-nav-link.active {
+  color: var(--color-accent);
 }
