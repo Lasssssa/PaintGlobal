@@ -5,6 +5,7 @@ import type { ReactNode, PointerEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useReadContract, useReadContracts } from "wagmi";
+import { useQueryClient } from "@tanstack/react-query";
 import { CONTRACT_ADDRESS, CONTRACT_ABI, PAINTING_STATUS } from "@/lib/contract";
 import { fetchMetadata, fetchImageUrl, type PaintingMetadata } from "@/lib/storage";
 import { isNfcAvailable, signWithNfc, encodeBatchVoteMessage, type NfcStatusEvent } from "@/lib/nfc";
@@ -153,6 +154,7 @@ const CANNES_BG = "https://ethglobal.b-cdn.net/events/cannes2026/images/ap57a/de
 
 export default function SwipeClient() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { nfcAddress, setNfcAddress } = useContext(NfcIdentityContext);
   const [phase, setPhase] = useState<Phase>("identity");
   const [paintings, setPaintings] = useState<SwipePainting[]>([]);
@@ -372,6 +374,9 @@ export default function SwipeClient() {
 
       setSaveStatus("done");
       setNotification("Votes saved!");
+      // Invalider tout le cache wagmi : force un refetch de hasVoted/hasVotedNegative
+      // au prochain montage de SwipeClient → les items déjà votés n'apparaissent plus.
+      await queryClient.invalidateQueries();
       setTimeout(() => router.push("/"), 2000);
     } catch (err) {
       const name = err instanceof Error ? err.name : "";
