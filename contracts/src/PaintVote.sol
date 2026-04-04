@@ -24,11 +24,17 @@ contract PaintVote {
 
     Painting[] public paintings;
 
-    /// @notice votes[paintingId] = vote count
+    /// @notice votes[paintingId] = positive vote count
     mapping(uint256 => uint256) public votes;
 
-    /// @notice hasVoted[voter][paintingId] = true if already voted
+    /// @notice negativeVotes[paintingId] = negative vote count
+    mapping(uint256 => uint256) public negativeVotes;
+
+    /// @notice hasVoted[voter][paintingId] = true if already voted positively
     mapping(address => mapping(uint256 => bool)) public hasVoted;
+
+    /// @notice hasVotedNegative[voter][paintingId] = true if already voted negatively
+    mapping(address => mapping(uint256 => bool)) public hasVotedNegative;
 
     /// @notice Author has at least one approved painting — no further submissions
     mapping(address => bool) public hasApprovedSubmission;
@@ -41,7 +47,7 @@ contract PaintVote {
     event PaintingAdded(uint256 indexed id, string uri, address indexed author);
     event PaintingApproved(uint256 indexed id, address indexed author);
     event PaintingRejected(uint256 indexed id, address indexed author);
-    event Voted(uint256 indexed paintingId, address indexed voter);
+    event Voted(uint256 indexed paintingId, address indexed voter, bool support);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     // ─── Modifiers ────────────────────────────────────────────────────────────
@@ -133,14 +139,16 @@ contract PaintVote {
 
     // ─── Write (votes) ─────────────────────────────────────────────────────────
 
-    /// @notice Cast one vote for an approved painting. Cannot vote for own work.
-    function vote(uint256 paintingId) external {
-        _vote(msg.sender, paintingId);
+    /// @notice Cast a directional vote for an approved painting. Cannot vote for own work.
+    function vote(uint256 paintingId, bool support) external {
+        _vote(msg.sender, paintingId, support);
     }
 
     /// @notice Vote via NFC bracelet signature. Called by the relayer.
+    /// @dev Message is 3 bytes: bytes 0-1 = painting ID (big-endian), byte 2 = 0x01 (support) or 0x00 (pass)
     function voteWithNfc(
         uint256 paintingId,
+        bool support,
         uint8 v,
         bytes32 r,
         bytes32 s,
@@ -153,24 +161,31 @@ contract PaintVote {
         address signer = ecrecover(hash, v, r, s);
         require(signer != address(0), "PaintVote: invalid signature");
 
-        require(message.length >= 2, "PaintVote: message too short");
+        require(message.length >= 3, "PaintVote: message too short");
         uint256 decodedId = (uint256(uint8(message[0])) << 8) | uint256(uint8(message[1]));
         require(decodedId == paintingId, "PaintVote: id mismatch");
+        bool decodedSupport = message[2] != 0x00;
+        require(decodedSupport == support, "PaintVote: support mismatch");
 
-        _vote(signer, paintingId);
+        _vote(signer, paintingId, support);
     }
 
-    function _vote(address voter, uint256 paintingId) internal {
+    function _vote(address voter, uint256 paintingId, bool support) internal {
         require(paintingId < paintings.length, "PaintVote: invalid painting");
         Painting storage p = paintings[paintingId];
         require(p.status == Status.Approved, "PaintVote: not approved");
         require(voter != p.author, "PaintVote: cannot vote own");
-        require(!hasVoted[voter][paintingId], "PaintVote: already voted");
+        require(!hasVoted[voter][paintingId] && !hasVotedNegative[voter][paintingId], "PaintVote: already voted");
 
-        hasVoted[voter][paintingId] = true;
-        votes[paintingId] += 1;
+        if (support) {
+            hasVoted[voter][paintingId] = true;
+            votes[paintingId] += 1;
+        } else {
+            hasVotedNegative[voter][paintingId] = true;
+            negativeVotes[paintingId] += 1;
+        }
 
-        emit Voted(paintingId, voter);
+        emit Voted(paintingId, voter, support);
     }
 
     // ─── Read ─────────────────────────────────────────────────────────────────
