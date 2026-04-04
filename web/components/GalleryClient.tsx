@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useReadContract, useReadContracts } from "wagmi";
-import { CONTRACT_ADDRESS, CONTRACT_ABI } from "@/lib/contract";
+import { CONTRACT_ADDRESS, CONTRACT_ABI, PAINTING_STATUS } from "@/lib/contract";
 import { fetchMetadata, type PaintingMetadata } from "@/lib/storage";
 import PaintingCard from "@/components/PaintingCard";
 import Link from "next/link";
@@ -11,6 +11,19 @@ interface Painting {
   id: number;
   metadata: PaintingMetadata;
   votes: number;
+  author: `0x${string}`;
+}
+
+function paintingTuple(
+  result: unknown
+): { uri: string; author: `0x${string}`; status: number } | null {
+  if (result == null) return null;
+  if (Array.isArray(result)) {
+    const [uri, author, status] = result as [string, `0x${string}`, number];
+    return { uri, author, status: Number(status) };
+  }
+  const o = result as { uri: string; author: `0x${string}`; status: number };
+  return { uri: o.uri, author: o.author, status: Number(o.status) };
 }
 
 export default function GalleryClient() {
@@ -18,54 +31,84 @@ export default function GalleryClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const { data: uris, refetch: refetchUris } = useReadContract({
+  const { data: countBn, refetch: refetchCount } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
-    functionName: "getPaintings",
+    functionName: "paintingCount",
   });
 
-  const { data: voteCounts, refetch: refetchVotes } = useReadContracts({
-    contracts:
-      (uris as string[] | undefined)?.map((_, i) => ({
+  const n = countBn !== undefined ? Number(countBn) : 0;
+
+  const paintingContracts = useMemo(
+    () =>
+      Array.from({ length: n }, (_, i) => ({
+        address: CONTRACT_ADDRESS,
+        abi: CONTRACT_ABI,
+        functionName: "paintings" as const,
+        args: [BigInt(i)] as const,
+      })),
+    [n]
+  );
+
+  const voteContracts = useMemo(
+    () =>
+      Array.from({ length: n }, (_, i) => ({
         address: CONTRACT_ADDRESS,
         abi: CONTRACT_ABI,
         functionName: "votes" as const,
         args: [BigInt(i)] as const,
-      })) ?? [],
+      })),
+    [n]
+  );
+
+  const { data: paintingReads, refetch: refetchPaintings } = useReadContracts({
+    contracts: paintingContracts,
+    query: { enabled: n >= 0 },
+  });
+
+  const { data: voteCounts, refetch: refetchVotes } = useReadContracts({
+    contracts: voteContracts,
+    query: { enabled: n >= 0 },
   });
 
   const loadPaintings = useCallback(async () => {
-    if (!uris) {
-      setLoading(false);
-      return;
-    }
+    if (countBn === undefined) return;
+    if (n > 0 && (paintingReads === undefined || voteCounts === undefined)) return;
+
     setLoading(true);
     setError("");
     try {
-      const results = await Promise.all(
-        (uris as string[]).map(async (uri, index) => {
-          const metadata = await fetchMetadata(uri);
-          if (!metadata) return null;
-          const voteResult = voteCounts?.[index];
-          const votes =
-            voteResult?.result !== undefined ? Number(voteResult.result as bigint) : 0;
-          return { id: index, metadata, votes };
-        })
-      );
-      setPaintings(results.filter(Boolean) as Painting[]);
+      const results: Painting[] = [];
+      for (let index = 0; index < n; index++) {
+        const row = paintingTuple(paintingReads?.[index]?.result);
+        if (!row || row.status !== PAINTING_STATUS.Approved) continue;
+        const metadata = await fetchMetadata(row.uri);
+        if (!metadata) continue;
+        const voteResult = voteCounts?.[index];
+        const votes =
+          voteResult?.result !== undefined ? Number(voteResult.result as bigint) : 0;
+        results.push({
+          id: index,
+          metadata,
+          votes,
+          author: row.author,
+        });
+      }
+      setPaintings(results);
     } catch {
       setError("Failed to load paintings from IPFS.");
     } finally {
       setLoading(false);
     }
-  }, [uris, voteCounts]);
+  }, [countBn, n, paintingReads, voteCounts]);
 
   useEffect(() => {
     loadPaintings();
   }, [loadPaintings]);
 
   const handleVoted = () => {
-    refetchUris();
+    refetchCount();
+    refetchPaintings();
     refetchVotes();
   };
 
@@ -74,7 +117,7 @@ export default function GalleryClient() {
       <div className="mb-8 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-[-0.03em] text-ink">Gallery</h1>
-          <p className="mt-1 text-sm text-muted">Paintings stored on IPFS — support on-chain</p>
+          <p className="mt-1 text-sm text-muted">Approved paintings on IPFS — support on-chain</p>
         </div>
         <Link href="/upload" className="btn-brutalist btn-primary no-underline">
           + Add a painting
@@ -102,9 +145,9 @@ export default function GalleryClient() {
       {!loading && !error && paintings.length === 0 && (
         <div className="empty-state">
           <span className="mb-3 block text-4xl">🖼️</span>
-          <p className="mb-4 text-base">No paintings yet.</p>
+          <p className="mb-4 text-base">No approved paintings yet.</p>
           <Link href="/upload" className="btn-brutalist btn-primary no-underline">
-            Be the first to add one!
+            Submit one for review
           </Link>
         </div>
       )}
@@ -115,6 +158,7 @@ export default function GalleryClient() {
             <PaintingCard
               key={p.id}
               paintingId={p.id}
+              author={p.author}
               metadata={p.metadata}
               voteCount={p.votes}
               onVoted={handleVoted}

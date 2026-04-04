@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, ChangeEvent, useEffect } from "react";
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useRouter } from "next/navigation";
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from "@/lib/contract";
@@ -25,7 +25,7 @@ const STEP_LABELS: Record<Step, string> = {
   "nfc-signing": "Waiting for NFC scan…",
   "nfc-submitting": "Recording on-chain…",
   confirming: "Confirm the transaction…",
-  done: "Published!",
+  done: "Submitted for review!",
   error: "Try again",
 };
 
@@ -45,20 +45,40 @@ export default function UploadClient() {
     setHasNfc(isNfcAvailable());
   }, []);
 
+  const { data: pendingSubmission } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: CONTRACT_ABI,
+    functionName: "hasPendingSubmission",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address },
+  });
+
+  const { data: approvedSubmission } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: CONTRACT_ABI,
+    functionName: "hasApprovedSubmission",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address },
+  });
+
   const { writeContract, data: txHash, error: writeError } = useWriteContract();
   const { isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
 
   useEffect(() => {
     if (isConfirmed && step === "confirming") {
       setStep("done");
-      setTimeout(() => router.push("/"), 2000);
+      setTimeout(() => router.push("/"), 2500);
     }
   }, [isConfirmed, step, router]);
 
   useEffect(() => {
     if (writeError && step === "confirming") {
       setStep("error");
-      setErrorMsg(writeError.message.slice(0, 160));
+      const m = writeError.message;
+      let short = m.slice(0, 200);
+      if (m.includes("pending submission")) short = "You already have a painting awaiting moderation.";
+      else if (m.includes("already approved")) short = "You already have an approved painting on the gallery.";
+      setErrorMsg(short);
     }
   }, [writeError, step]);
 
@@ -155,7 +175,7 @@ export default function UploadClient() {
       if (!res.ok) throw new Error(data.error ?? "Relay failed");
 
       setStep("done");
-      setTimeout(() => router.push("/"), 2000);
+      setTimeout(() => router.push("/"), 2500);
     } catch (err: unknown) {
       console.error(err);
       const name = err instanceof Error ? err.name : "";
@@ -166,6 +186,11 @@ export default function UploadClient() {
         msg = "NFC permission denied. Check your browser settings.";
       } else {
         msg = (err instanceof Error ? err.message : String(err)).slice(0, 200);
+      }
+      if (msg.includes("pending submission")) {
+        msg = "You already have a painting awaiting moderation.";
+      } else if (msg.includes("already approved")) {
+        msg = "You already have an approved painting on the gallery.";
       }
       setErrorMsg(msg);
       setStep("error");
@@ -179,8 +204,20 @@ export default function UploadClient() {
     <main className="mx-auto w-full max-w-xl px-5 py-8">
       <h1 className="mb-1 text-3xl font-bold tracking-[-0.03em] text-ink">Add a painting</h1>
       <p className="mb-8 text-sm text-muted">
-        Image and metadata stored on IPFS, support recorded on-chain on ARC.
+        Image and metadata stored on IPFS. Submissions are moderated before they appear in the gallery.
       </p>
+
+      {isConnected && approvedSubmission && (
+        <div className="mb-5 rounded-[var(--radius-sm)] border-2 border-line bg-ink/5 p-3 text-sm text-ink">
+          You already have an approved painting. You cannot submit another from this wallet.
+        </div>
+      )}
+
+      {isConnected && pendingSubmission && !approvedSubmission && (
+        <div className="mb-5 rounded-[var(--radius-sm)] border-2 border-accent bg-accent-soft p-3 text-sm text-ink">
+          You already have a submission awaiting moderation. Wait for approval or rejection before submitting again.
+        </div>
+      )}
 
       {!canShowForm ? (
         <div className="empty-state flex flex-col items-center gap-5">
@@ -267,7 +304,7 @@ export default function UploadClient() {
 
           {step === "done" && (
             <div className="flex items-center gap-2 rounded-[var(--radius-sm)] border-2 border-success bg-success-soft p-3 text-sm font-semibold text-success">
-              ✓ Painting published! Redirecting…
+              ✓ Submitted for review. It will appear in the gallery after approval. Redirecting…
             </div>
           )}
 
@@ -279,7 +316,13 @@ export default function UploadClient() {
 
           <button
             type="submit"
-            disabled={!file || !title.trim() || isLoading || step === "done"}
+            disabled={
+              !file ||
+              !title.trim() ||
+              isLoading ||
+              step === "done" ||
+              (isConnected && (!!pendingSubmission || !!approvedSubmission))
+            }
             className="btn-brutalist btn-primary justify-center py-3 text-base"
           >
             {isConnected ? STEP_LABELS[step] : (
