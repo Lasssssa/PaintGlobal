@@ -188,6 +188,34 @@ contract PaintVote {
         emit Voted(paintingId, voter, support);
     }
 
+    /// @notice Vote on multiple approved paintings in one transaction via NFC signature.
+    /// @dev Message = 3N bytes. Each group: bytes 0-1 = painting ID (big-endian), byte 2 = 0x01 (support) or 0x00 (pass).
+    function batchVoteWithNfc(
+        uint256[] calldata paintingIds,
+        bool[]    calldata voteDirections,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        bytes32 hash,
+        bytes calldata message
+    ) external {
+        require(paintingIds.length == voteDirections.length, "PaintVote: length mismatch");
+        require(message.length == paintingIds.length * 3, "PaintVote: message length mismatch");
+        require(_messageToHash(message) == hash, "PaintVote: invalid hash");
+
+        address signer = ecrecover(hash, v, r, s);
+        require(signer != address(0), "PaintVote: invalid signature");
+
+        for (uint256 i = 0; i < paintingIds.length; i++) {
+            uint256 decodedId =
+                (uint256(uint8(message[i * 3])) << 8) | uint256(uint8(message[i * 3 + 1]));
+            require(decodedId == paintingIds[i], "PaintVote: id mismatch");
+            bool decodedSupport = message[i * 3 + 2] != 0x00;
+            require(decodedSupport == voteDirections[i], "PaintVote: support mismatch");
+            _vote(signer, paintingIds[i], voteDirections[i]);
+        }
+    }
+
     // ─── Read ─────────────────────────────────────────────────────────────────
 
     /// @notice Total number of paintings (all statuses)
