@@ -199,6 +199,45 @@ export const CONTRACT_ABI = [
     outputs: [],
   },
   {
+    type: "event",
+    name: "Tipped",
+    inputs: [
+      { name: "paintingId", type: "uint256", indexed: true },
+      { name: "tipper", type: "address", indexed: true },
+    ],
+  },
+  {
+    type: "function",
+    name: "tips",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "hasTipped",
+    stateMutability: "view",
+    inputs: [
+      { name: "", type: "address" },
+      { name: "", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "tipWithNfc",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "paintingId", type: "uint256" },
+      { name: "v", type: "uint8" },
+      { name: "r", type: "bytes32" },
+      { name: "s", type: "bytes32" },
+      { name: "hash", type: "bytes32" },
+      { name: "message", type: "bytes" },
+    ],
+    outputs: [],
+  },
+  {
     type: "function",
     name: "batchVoteWithNfc",
     stateMutability: "nonpayable",

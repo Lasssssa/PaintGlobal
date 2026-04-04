@@ -42,12 +42,19 @@ contract PaintVote {
     /// @notice Author has a submission currently pending moderation
     mapping(address => bool) public hasPendingSubmission;
 
+    /// @notice tips[paintingId] = total tip count received
+    mapping(uint256 => uint256) public tips;
+
+    /// @notice hasTipped[tipper][paintingId] = true if already tipped (one tip per bracelet per painting)
+    mapping(address => mapping(uint256 => bool)) public hasTipped;
+
     // ─── Events ───────────────────────────────────────────────────────────────
 
     event PaintingAdded(uint256 indexed id, string uri, address indexed author);
     event PaintingApproved(uint256 indexed id, address indexed author);
     event PaintingRejected(uint256 indexed id, address indexed author);
     event Voted(uint256 indexed paintingId, address indexed voter, bool support);
+    event Tipped(uint256 indexed paintingId, address indexed tipper);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     // ─── Modifiers ────────────────────────────────────────────────────────────
@@ -214,6 +221,39 @@ contract PaintVote {
             require(decodedSupport == voteDirections[i], "PaintVote: support mismatch");
             _vote(signer, paintingIds[i], voteDirections[i]);
         }
+    }
+
+    // ─── Write (tips) ──────────────────────────────────────────────────────────
+
+    /// @notice Record a tip for an approved painting via NFC signature. One tip per bracelet per painting.
+    /// @dev Message = 2 bytes (painting ID big-endian), same encoding as encodePaintingId().
+    function tipWithNfc(
+        uint256 paintingId,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        bytes32 hash,
+        bytes calldata message
+    ) external {
+        require(paintingId < paintings.length, "PaintVote: invalid painting");
+        require(_messageToHash(message) == hash, "PaintVote: invalid hash");
+
+        address signer = ecrecover(hash, v, r, s);
+        require(signer != address(0), "PaintVote: invalid signature");
+
+        require(message.length >= 2, "PaintVote: message too short");
+        uint256 decodedId = (uint256(uint8(message[0])) << 8) | uint256(uint8(message[1]));
+        require(decodedId == paintingId, "PaintVote: id mismatch");
+
+        require(!hasTipped[signer][paintingId], "PaintVote: already tipped");
+
+        Painting storage p = paintings[paintingId];
+        require(p.status == Status.Approved, "PaintVote: not approved");
+
+        hasTipped[signer][paintingId] = true;
+        tips[paintingId] += 1;
+
+        emit Tipped(paintingId, signer);
     }
 
     // ─── Read ─────────────────────────────────────────────────────────────────

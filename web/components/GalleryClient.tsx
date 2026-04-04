@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useContext } from "react";
 import { useReadContract, useReadContracts } from "wagmi";
 import { CONTRACT_ADDRESS, CONTRACT_ABI, PAINTING_STATUS } from "@/lib/contract";
 import { fetchMetadata, type PaintingMetadata } from "@/lib/storage";
 import PaintingCard from "@/components/PaintingCard";
 import Link from "next/link";
+import { NfcIdentityContext } from "@/lib/nfc-context";
 
 interface Painting {
   id: number;
   metadata: PaintingMetadata;
   votes: number;
+  tips: number;
   author: `0x${string}`;
 }
 
@@ -30,6 +32,7 @@ export default function GalleryClient() {
   const [paintings, setPaintings] = useState<Painting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const { nfcAddress } = useContext(NfcIdentityContext);
 
   const { data: countBn } = useReadContract({
     address: CONTRACT_ADDRESS,
@@ -61,6 +64,17 @@ export default function GalleryClient() {
     [n]
   );
 
+  const tipContracts = useMemo(
+    () =>
+      Array.from({ length: n }, (_, i) => ({
+        address: CONTRACT_ADDRESS,
+        abi: CONTRACT_ABI,
+        functionName: "tips" as const,
+        args: [BigInt(i)] as const,
+      })),
+    [n]
+  );
+
   const { data: paintingReads } = useReadContracts({
     contracts: paintingContracts,
     query: { enabled: n >= 0 },
@@ -71,9 +85,14 @@ export default function GalleryClient() {
     query: { enabled: n >= 0 },
   });
 
+  const { data: tipCounts } = useReadContracts({
+    contracts: tipContracts,
+    query: { enabled: n >= 0 },
+  });
+
   const loadPaintings = useCallback(async () => {
     if (countBn === undefined) return;
-    if (n > 0 && (paintingReads === undefined || voteCounts === undefined)) return;
+    if (n > 0 && (paintingReads === undefined || voteCounts === undefined || tipCounts === undefined)) return;
 
     setLoading(true);
     setError("");
@@ -87,10 +106,14 @@ export default function GalleryClient() {
         const voteResult = voteCounts?.[index];
         const votes =
           voteResult?.result !== undefined ? Number(voteResult.result as bigint) : 0;
+        const tipResult = tipCounts?.[index];
+        const tips =
+          tipResult?.result !== undefined ? Number(tipResult.result as bigint) : 0;
         results.push({
           id: index,
           metadata,
           votes,
+          tips,
           author: row.author,
         });
       }
@@ -100,7 +123,7 @@ export default function GalleryClient() {
     } finally {
       setLoading(false);
     }
-  }, [countBn, n, paintingReads, voteCounts]);
+  }, [countBn, n, paintingReads, voteCounts, tipCounts]);
 
   useEffect(() => {
     loadPaintings();
@@ -159,6 +182,8 @@ export default function GalleryClient() {
               paintingId={p.id}
               metadata={p.metadata}
               voteCount={p.votes}
+              tipCount={p.tips}
+              nfcAddress={nfcAddress ?? undefined}
             />
           ))}
         </div>
