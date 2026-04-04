@@ -68,6 +68,15 @@ export function encodePaintingId(id: number): string {
 }
 
 /**
+ * Encode a vote message as a 6-char hex string (3 bytes):
+ *   bytes 0-1: painting ID (big-endian uint16)
+ *   byte 2:    0x01 = support, 0x00 = pass
+ */
+export function encodeVoteMessage(id: number, support: boolean): string {
+  return id.toString(16).padStart(4, "0") + (support ? "01" : "00");
+}
+
+/**
  * Ask the user to tap their HaLo bracelet and sign a hex message.
  * @param message Hex string without 0x prefix
  * @param onStatus Callback for UX feedback with platform-aware info

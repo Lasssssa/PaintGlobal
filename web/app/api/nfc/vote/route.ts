@@ -5,8 +5,9 @@ import { CONTRACT_ADDRESS, CONTRACT_ABI } from "@/lib/contract";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { paintingId, v, r, s, hash, message } = body as {
+    const { paintingId, support, v, r, s, hash, message } = body as {
       paintingId: number;
+      support: boolean;
       v: number;
       r: string;
       s: string;
@@ -23,6 +24,7 @@ export async function POST(req: NextRequest) {
       functionName: "voteWithNfc",
       args: [
         BigInt(paintingId),
+        support,
         v,
         r as `0x${string}`,
         s as `0x${string}`,

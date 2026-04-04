@@ -1,145 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
+import { useReadContract } from "wagmi";
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from "@/lib/contract";
 import { fetchImageUrl, type PaintingMetadata } from "@/lib/storage";
-import { isNfcAvailable, signWithNfc, encodePaintingId, type NfcStatusEvent } from "@/lib/nfc";
 
 interface Props {
   paintingId: number;
-  author: `0x${string}`;
   metadata: PaintingMetadata;
   voteCount: number;
-  onVoted?: () => void;
+  nfcAddress?: string;
 }
 
-function sameAddress(a: string | undefined, b: string) {
-  if (!a) return false;
-  return a.toLowerCase() === b.toLowerCase();
-}
-
-export default function PaintingCard({ paintingId, author, metadata, voteCount, onVoted }: Props) {
-  const { address, isConnected } = useAccount();
-  const [notification, setNotification] = useState("");
-  const [nfcStatus, setNfcStatus] = useState<"idle" | "scanning" | "submitting">("idle");
-  const [hasNfc, setHasNfc] = useState(false);
-
-  const isAuthor = sameAddress(address, author);
-
-  useEffect(() => {
-    setHasNfc(isNfcAvailable());
-  }, []);
-
+export default function PaintingCard({ paintingId, metadata, voteCount, nfcAddress }: Props) {
   const imgSrc = fetchImageUrl(metadata.imageCID);
 
-  const { data: alreadyVoted, refetch: refetchVoted } = useReadContract({
+  const { data: alreadyVoted } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "hasVoted",
-    args: address ? [address, BigInt(paintingId)] : undefined,
-    query: { enabled: !!address },
+    args: nfcAddress ? [nfcAddress as `0x${string}`, BigInt(paintingId)] : undefined,
+    query: { enabled: !!nfcAddress },
   });
-
-  const { writeContract, data: txHash, isPending, error: writeError } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
-
-  useEffect(() => {
-    if (isConfirmed) {
-      setNotification("Support recorded!");
-      refetchVoted();
-      onVoted?.();
-      setTimeout(() => setNotification(""), 3000);
-    }
-  }, [isConfirmed, refetchVoted, onVoted]);
-
-  useEffect(() => {
-    if (writeError) {
-      const raw = writeError.message;
-      let msg: string;
-      if (raw.includes("cannot vote own")) msg = "You cannot support your own painting.";
-      else if (raw.includes("already voted")) msg = "You already supported this painting.";
-      else if (raw.includes("not approved")) msg = "This painting is not open for support.";
-      else msg = "Something went wrong.";
-      setNotification(msg);
-      setTimeout(() => setNotification(""), 4000);
-    }
-  }, [writeError]);
-
-  const handleVote = () => {
-    writeContract({
-      address: CONTRACT_ADDRESS,
-      abi: CONTRACT_ABI,
-      functionName: "vote",
-      args: [BigInt(paintingId)],
-    });
-  };
-
-  const handleNfcVote = async () => {
-    try {
-      setNfcStatus("scanning");
-      const message = encodePaintingId(paintingId);
-      const sig = await signWithNfc(message, (evt: NfcStatusEvent) => {
-        if (evt.cause === "init") {
-          setNotification(
-            evt.method === "credential"
-              ? "Hold your iPhone near the bracelet…"
-              : "Tap your bracelet…"
-          );
-        }
-        if (evt.cause === "again") setNotification("Keep holding…");
-        if (evt.cause === "retry") setNotification("Try again…");
-        if (evt.cause === "scanned") setNotification("Scanned!");
-      });
-
-      setNfcStatus("submitting");
-      setNotification("Submitting on-chain…");
-
-      const res = await fetch("/api/nfc/vote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          paintingId,
-          v: sig.v,
-          r: sig.r,
-          s: sig.s,
-          hash: sig.hash,
-          message: `0x${message}`,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Relay failed");
-
-      setNotification("Support recorded via NFC!");
-      onVoted?.();
-      setTimeout(() => setNotification(""), 3000);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "NFC support failed";
-      const name = err instanceof Error ? err.name : "";
-      let display: string;
-      if (msg.includes("cannot vote own")) {
-        display = "You cannot support your own painting.";
-      } else if (msg.includes("already voted")) {
-        display = "This bracelet already supported this painting.";
-      } else if (msg.includes("not approved")) {
-        display = "This painting is not open for support.";
-      } else if (name === "NFCMethodNotSupported") {
-        display = "NFC is not supported on this device.";
-      } else if (name === "NFCPermissionRequestDenied") {
-        display = "NFC permission denied. Check your browser settings.";
-      } else {
-        display = msg.slice(0, 150);
-      }
-      setNotification(display);
-      setTimeout(() => setNotification(""), 4000);
-    } finally {
-      setNfcStatus("idle");
-    }
-  };
-
-  const isLoading = isPending || isConfirming;
-  const isNfcBusy = nfcStatus !== "idle";
 
   return (
     <div className="card-brutalist flex flex-col">
@@ -160,56 +41,19 @@ export default function PaintingCard({ paintingId, author, metadata, voteCount, 
         <span className="count-pill absolute top-2.5 right-3">
           {voteCount} {voteCount !== 1 ? "supporters" : "supporter"}
         </span>
+
+        {alreadyVoted && (
+          <span className="absolute top-2.5 left-3 inline-flex items-center gap-1 rounded-[var(--radius-sm)] border-2 border-accent bg-accent-soft px-2 py-1 text-xs font-bold text-accent">
+            ♥ Supported
+          </span>
+        )}
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 p-4">
+      <div className="flex flex-1 flex-col gap-1 p-4">
         <h3 className="text-lg font-bold tracking-[-0.02em] text-ink line-clamp-1">{metadata.title}</h3>
         <p className="truncate font-mono text-xs text-muted">
           {metadata.author.slice(0, 6)}…{metadata.author.slice(-4)}
         </p>
-
-        <div className="mt-auto flex flex-wrap items-center gap-2">
-          {isConnected && alreadyVoted ? (
-            <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border-2 border-accent bg-accent-soft px-3 py-1.5 text-xs font-bold text-accent">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-              Supported
-            </span>
-          ) : isConnected && isAuthor ? (
-            <span className="text-xs text-muted">Your painting — support from others only</span>
-          ) : isConnected ? (
-            <button
-              onClick={handleVote}
-              disabled={isLoading}
-              className="btn-brutalist btn-primary"
-            >
-              {isLoading ? "…" : "Support"}
-            </button>
-          ) : null}
-
-          {hasNfc && !isAuthor && (
-            <button
-              onClick={handleNfcVote}
-              disabled={isNfcBusy || !!alreadyVoted}
-              className="btn-brutalist"
-            >
-              {isNfcBusy ? (nfcStatus === "scanning" ? "Tap…" : "…") : "Tap NFC"}
-            </button>
-          )}
-
-          {hasNfc && isAuthor && (
-            <span className="text-xs text-muted">NFC support disabled for your work</span>
-          )}
-
-          {!isConnected && !hasNfc && (
-            <span className="text-xs text-muted">Connect wallet</span>
-          )}
-        </div>
-
-        {notification && (
-          <div className="rounded-[var(--radius-sm)] border-2 border-success bg-success-soft px-3 py-2 text-xs font-semibold text-success">
-            {notification}
-          </div>
-        )}
       </div>
     </div>
   );

@@ -50,6 +50,7 @@ export const CONTRACT_ABI = [
     inputs: [
       { name: "paintingId", type: "uint256", indexed: true },
       { name: "voter", type: "address", indexed: true },
+      { name: "support", type: "bool", indexed: false },
     ],
   },
   {
@@ -99,7 +100,10 @@ export const CONTRACT_ABI = [
     type: "function",
     name: "vote",
     stateMutability: "nonpayable",
-    inputs: [{ name: "paintingId", type: "uint256" }],
+    inputs: [
+      { name: "paintingId", type: "uint256" },
+      { name: "support", type: "bool" },
+    ],
     outputs: [],
   },
   {
@@ -140,7 +144,24 @@ export const CONTRACT_ABI = [
   },
   {
     type: "function",
+    name: "negativeVotes",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
     name: "hasVoted",
+    stateMutability: "view",
+    inputs: [
+      { name: "", type: "address" },
+      { name: "", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "hasVotedNegative",
     stateMutability: "view",
     inputs: [
       { name: "", type: "address" },
@@ -168,6 +189,7 @@ export const CONTRACT_ABI = [
     stateMutability: "nonpayable",
     inputs: [
       { name: "paintingId", type: "uint256" },
+      { name: "support", type: "bool" },
       { name: "v", type: "uint8" },
       { name: "r", type: "bytes32" },
       { name: "s", type: "bytes32" },

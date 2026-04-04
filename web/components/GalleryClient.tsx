@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useContext } from "react";
 import { useReadContract, useReadContracts } from "wagmi";
 import { CONTRACT_ADDRESS, CONTRACT_ABI, PAINTING_STATUS } from "@/lib/contract";
 import { fetchMetadata, type PaintingMetadata } from "@/lib/storage";
 import PaintingCard from "@/components/PaintingCard";
 import Link from "next/link";
+import { NfcIdentityContext } from "@/lib/nfc-context";
 
 interface Painting {
   id: number;
@@ -30,8 +31,9 @@ export default function GalleryClient() {
   const [paintings, setPaintings] = useState<Painting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const { nfcAddress } = useContext(NfcIdentityContext);
 
-  const { data: countBn, refetch: refetchCount } = useReadContract({
+  const { data: countBn } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "paintingCount",
@@ -61,12 +63,12 @@ export default function GalleryClient() {
     [n]
   );
 
-  const { data: paintingReads, refetch: refetchPaintings } = useReadContracts({
+  const { data: paintingReads } = useReadContracts({
     contracts: paintingContracts,
     query: { enabled: n >= 0 },
   });
 
-  const { data: voteCounts, refetch: refetchVotes } = useReadContracts({
+  const { data: voteCounts } = useReadContracts({
     contracts: voteContracts,
     query: { enabled: n >= 0 },
   });
@@ -106,22 +108,21 @@ export default function GalleryClient() {
     loadPaintings();
   }, [loadPaintings]);
 
-  const handleVoted = () => {
-    refetchCount();
-    refetchPaintings();
-    refetchVotes();
-  };
-
   return (
     <main className="mx-auto w-full max-w-[1280px] px-5 py-8">
       <div className="mb-8 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-[-0.03em] text-ink">Gallery</h1>
-          <p className="mt-1 text-sm text-muted">Approved paintings on IPFS — support on-chain</p>
+          <p className="mt-1 text-sm text-muted">Approved paintings on IPFS</p>
         </div>
-        <Link href="/upload" className="btn-brutalist btn-primary no-underline">
-          + Add a painting
-        </Link>
+        <div className="flex gap-3">
+          <Link href="/swipe" className="btn-brutalist no-underline">
+            Swipe to vote →
+          </Link>
+          <Link href="/upload" className="btn-brutalist btn-primary no-underline">
+            + Add a painting
+          </Link>
+        </div>
       </div>
 
       {loading && (
@@ -158,10 +159,9 @@ export default function GalleryClient() {
             <PaintingCard
               key={p.id}
               paintingId={p.id}
-              author={p.author}
               metadata={p.metadata}
               voteCount={p.votes}
-              onVoted={handleVoted}
+              nfcAddress={nfcAddress ?? undefined}
             />
           ))}
         </div>
