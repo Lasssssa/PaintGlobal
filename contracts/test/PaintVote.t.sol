@@ -33,10 +33,10 @@ contract PaintVoteTest is Test {
 
         vm.prank(voter);
         vm.expectRevert(bytes("PaintVote: not approved"));
-        vote.vote(0);
+        vote.vote(0, true);
     }
 
-    function test_Approve_ThenVote() public {
+    function test_Approve_ThenVote_Positive() public {
         vm.prank(author);
         vote.addPainting("ipfs://a");
 
@@ -44,9 +44,41 @@ contract PaintVoteTest is Test {
         vote.approve(0);
 
         vm.prank(voter);
-        vote.vote(0);
+        vote.vote(0, true);
         assertEq(vote.votes(0), 1);
+        assertEq(vote.negativeVotes(0), 0);
         assertTrue(vote.hasVoted(voter, 0));
+        assertFalse(vote.hasVotedNegative(voter, 0));
+    }
+
+    function test_Approve_ThenVote_Negative() public {
+        vm.prank(author);
+        vote.addPainting("ipfs://a");
+
+        vm.prank(owner);
+        vote.approve(0);
+
+        vm.prank(voter);
+        vote.vote(0, false);
+        assertEq(vote.votes(0), 0);
+        assertEq(vote.negativeVotes(0), 1);
+        assertFalse(vote.hasVoted(voter, 0));
+        assertTrue(vote.hasVotedNegative(voter, 0));
+    }
+
+    function test_Vote_RevertsDoubleVote() public {
+        vm.prank(author);
+        vote.addPainting("ipfs://a");
+
+        vm.prank(owner);
+        vote.approve(0);
+
+        vm.prank(voter);
+        vote.vote(0, true);
+
+        vm.prank(voter);
+        vm.expectRevert(bytes("PaintVote: already voted"));
+        vote.vote(0, false);
     }
 
     function test_Vote_RevertsForAuthor() public {
@@ -58,7 +90,7 @@ contract PaintVoteTest is Test {
 
         vm.prank(author);
         vm.expectRevert(bytes("PaintVote: cannot vote own"));
-        vote.vote(0);
+        vote.vote(0, true);
     }
 
     function test_Reject_ThenAuthorCanSubmitAgain() public {
@@ -106,24 +138,107 @@ contract PaintVoteTest is Test {
         vote.approve(0);
     }
 
-    function test_VoteWithNfc_SameRules() public {
+    function test_VoteWithNfc_Positive() public {
         vm.prank(author);
         vote.addPainting("ipfs://a");
 
         vm.prank(owner);
         vote.approve(0);
 
-        // message = big-endian uint16 paintingId 0
-        bytes memory message = hex"0000";
+        // 3-byte message: paintingId=0, support=true (0x01)
+        bytes memory message = hex"000001";
         bytes32 hash = _ethSignedMessageHash(message);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(1, hash);
 
         address signerAddr = vm.addr(1);
         assertTrue(signerAddr != author);
 
-        vote.voteWithNfc(0, v, r, s, hash, message);
+        vote.voteWithNfc(0, true, v, r, s, hash, message);
         assertEq(vote.votes(0), 1);
         assertTrue(vote.hasVoted(signerAddr, 0));
+    }
+
+    function test_VoteWithNfc_Negative() public {
+        vm.prank(author);
+        vote.addPainting("ipfs://a");
+
+        vm.prank(owner);
+        vote.approve(0);
+
+        // 3-byte message: paintingId=0, support=false (0x00)
+        bytes memory message = hex"000000";
+        bytes32 hash = _ethSignedMessageHash(message);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(1, hash);
+
+        address signerAddr = vm.addr(1);
+
+        vote.voteWithNfc(0, false, v, r, s, hash, message);
+        assertEq(vote.negativeVotes(0), 1);
+        assertTrue(vote.hasVotedNegative(signerAddr, 0));
+    }
+
+    function test_VoteWithNfc_RevertsSupportMismatch() public {
+        vm.prank(author);
+        vote.addPainting("ipfs://a");
+
+        vm.prank(owner);
+        vote.approve(0);
+
+        // Message says support=true (0x01) but caller passes support=false
+        bytes memory message = hex"000001";
+        bytes32 hash = _ethSignedMessageHash(message);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(1, hash);
+
+        vm.expectRevert(bytes("PaintVote: support mismatch"));
+        vote.voteWithNfc(0, false, v, r, s, hash, message);
+    }
+
+    function test_BatchVoteWithNfc() public {
+        // Submit and approve 2 paintings
+        vm.prank(author);
+        vote.addPainting("ipfs://a");
+        vm.prank(address(0xC0DE));
+        vote.addPainting("ipfs://b");
+
+        vm.prank(owner);
+        vote.approve(0);
+        vm.prank(owner);
+        vote.approve(1);
+
+        // Batch: paintingId=0 support, paintingId=1 pass
+        // message = 000001 000100
+        bytes memory message = hex"000001000100";
+        bytes32 hash = _ethSignedMessageHash(message);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(1, hash);
+
+        address signerAddr = vm.addr(1);
+        assertTrue(signerAddr != author && signerAddr != address(0xC0DE));
+
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = 0; ids[1] = 1;
+        bool[] memory dirs = new bool[](2);
+        dirs[0] = true; dirs[1] = false;
+
+        vote.batchVoteWithNfc(ids, dirs, v, r, s, hash, message);
+
+        assertEq(vote.votes(0), 1);
+        assertEq(vote.negativeVotes(1), 1);
+        assertTrue(vote.hasVoted(signerAddr, 0));
+        assertTrue(vote.hasVotedNegative(signerAddr, 1));
+    }
+
+    function test_BatchVoteWithNfc_RevertsLengthMismatch() public {
+        bytes memory message = hex"000001";
+        bytes32 hash = _ethSignedMessageHash(message);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(1, hash);
+
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 0;
+        bool[] memory dirs = new bool[](2);
+        dirs[0] = true; dirs[1] = false;
+
+        vm.expectRevert(bytes("PaintVote: length mismatch"));
+        vote.batchVoteWithNfc(ids, dirs, v, r, s, hash, message);
     }
 
     function _ethSignedMessageHash(bytes memory message) internal pure returns (bytes32) {
