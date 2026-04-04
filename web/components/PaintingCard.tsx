@@ -1,30 +1,19 @@
 "use client";
 
-import { useReadContract } from "wagmi";
-import { CONTRACT_ADDRESS, CONTRACT_ABI } from "@/lib/contract";
 import { fetchImageUrl, type PaintingMetadata } from "@/lib/storage";
 
 interface Props {
   paintingId: number;
   metadata: PaintingMetadata;
   voteCount: number;
-  nfcAddress?: string;
 }
 
-export default function PaintingCard({ paintingId, metadata, voteCount, nfcAddress }: Props) {
+export default function PaintingCard({ metadata, voteCount }: Props) {
   const imgSrc = fetchImageUrl(metadata.imageCID);
-
-  const { data: alreadyVoted } = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: CONTRACT_ABI,
-    functionName: "hasVoted",
-    args: nfcAddress ? [nfcAddress as `0x${string}`, BigInt(paintingId)] : undefined,
-    query: { enabled: !!nfcAddress },
-  });
 
   return (
     <div className="card-brutalist flex flex-col">
-      <div className="relative border-b-2 border-line" style={{ aspectRatio: "16/10" }}>
+      <div className="relative border-b-2 border-line h-48 overflow-hidden">
         {imgSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -41,12 +30,6 @@ export default function PaintingCard({ paintingId, metadata, voteCount, nfcAddre
         <span className="count-pill absolute top-2.5 right-3">
           {voteCount} {voteCount !== 1 ? "supporters" : "supporter"}
         </span>
-
-        {alreadyVoted && (
-          <span className="absolute top-2.5 left-3 inline-flex items-center gap-1 rounded-[var(--radius-sm)] border-2 border-accent bg-accent-soft px-2 py-1 text-xs font-bold text-accent">
-            ♥ Supported
-          </span>
-        )}
       </div>
 
       <div className="flex flex-1 flex-col gap-1 p-4">
