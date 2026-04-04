@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, useContext } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useReadContract, useReadContracts } from "wagmi";
 import { CONTRACT_ADDRESS, CONTRACT_ABI, PAINTING_STATUS } from "@/lib/contract";
 import { fetchMetadata, type PaintingMetadata } from "@/lib/storage";
 import PaintingCard from "@/components/PaintingCard";
 import Link from "next/link";
-import { NfcIdentityContext } from "@/lib/nfc-context";
 
 interface Painting {
   id: number;
@@ -31,7 +30,6 @@ export default function GalleryClient() {
   const [paintings, setPaintings] = useState<Painting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const { nfcAddress } = useContext(NfcIdentityContext);
 
   const { data: countBn } = useReadContract({
     address: CONTRACT_ADDRESS,
@@ -161,7 +159,6 @@ export default function GalleryClient() {
               paintingId={p.id}
               metadata={p.metadata}
               voteCount={p.votes}
-              nfcAddress={nfcAddress ?? undefined}
             />
           ))}
         </div>
