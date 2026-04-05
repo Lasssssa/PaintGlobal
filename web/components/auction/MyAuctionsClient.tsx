@@ -8,6 +8,7 @@ import {
   AUCTION_CONTRACT_ADDRESS,
   AUCTION_CONTRACT_ABI,
   encodeCancelMessage,
+  ZERO_ADDRESS,
   type AuctionData,
 } from "@/lib/auction-contract";
 import { NfcIdentityContext } from "@/lib/nfc-context";
@@ -81,7 +82,7 @@ function AuctionRow({
   const { step, note, error, cancel } = useCancelAuction(auctionId, onCancelled);
   const now = Math.floor(Date.now() / 1000);
   const ended = Number(auction.endTime) <= now;
-  const hasBids = auction.highestBidder !== "0x0000000000000000000000000000000000000000";
+  const hasBids = auction.highestPayer !== ZERO_ADDRESS;
   const canCancel = !auction.finalized && !hasBids && !ended;
 
   let status = "Live";

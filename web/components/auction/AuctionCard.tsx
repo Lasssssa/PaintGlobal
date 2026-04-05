@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatEther } from "viem";
-import type { AuctionData } from "@/lib/auction-contract";
+import { ZERO_ADDRESS, type AuctionData } from "@/lib/auction-contract";
 
 const GATEWAY =
   process.env.NEXT_PUBLIC_PINATA_GATEWAY ?? "gateway.pinata.cloud";
@@ -60,7 +60,7 @@ export default function AuctionCard({ auctionId, auction }: Props) {
   }, [auction.tokenId, auction.nftContract]);
 
   const ended = remaining === 0;
-  const hasBids = auction.highestBidder !== "0x0000000000000000000000000000000000000000";
+  const hasBids = auction.highestPayer !== ZERO_ADDRESS;
 
   const formatTime = (s: number) => {
     if (s <= 0) return "Ended";
@@ -111,7 +111,7 @@ export default function AuctionCard({ auctionId, auction }: Props) {
             </p>
             {hasBids && (
               <p className="truncate font-mono text-xs text-muted">
-                by {auction.highestBidder.slice(0, 6)}…{auction.highestBidder.slice(-4)}
+                NFT to {auction.highestNftRecipient.slice(0, 6)}…{auction.highestNftRecipient.slice(-4)}
               </p>
             )}
           </div>
