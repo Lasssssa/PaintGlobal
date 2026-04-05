@@ -70,6 +70,32 @@ contract PaintNFT is ERC721, ERC721URIStorage, ERC721Enumerable {
         emit Minted(signer, tokenId, paintingId, uri);
     }
 
+    /// @notice Approve a spender to transfer a token on behalf of the bracelet owner.
+    ///         Called by the relayer. Verifies the bracelet signature authorises the approval.
+    /// @dev    Message must be abi.encodePacked(tokenId, spender) — exactly 52 bytes.
+    function approveWithNfc(
+        uint256 tokenId,
+        address spender,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        bytes32 hash,
+        bytes calldata message
+    ) external {
+        require(_messageToHash(message) == hash, "PaintNFT: invalid hash");
+        address signer = ecrecover(hash, v, r, s);
+        require(signer != address(0), "PaintNFT: invalid signature");
+        require(ownerOf(tokenId) == signer, "PaintNFT: not owner");
+        require(message.length == 52, "PaintNFT: bad message length");
+
+        uint256 decodedId = uint256(bytes32(message[0:32]));
+        address decodedSpender = address(bytes20(message[32:52]));
+        require(decodedId == tokenId, "PaintNFT: tokenId mismatch");
+        require(decodedSpender == spender, "PaintNFT: spender mismatch");
+
+        _approve(spender, tokenId, signer);
+    }
+
     // ── EIP-191 helpers (same scheme as PaintVote) ──────────────────────
 
     function _messageToHash(bytes memory message) internal pure returns (bytes32) {
