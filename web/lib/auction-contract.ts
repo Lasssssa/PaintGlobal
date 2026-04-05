@@ -13,12 +13,18 @@
  * createAuction message  (148 bytes / 296 hex chars):
  *   tokenId[32] | payerWallet[20] | startPrice[32] | durationSeconds[32] | nonce[32]
  *
+ * registerBidPayer message (52 bytes / 104 hex chars):
+ *   payerWallet[20] | bidLinkNonce[32]
+ *
  * approveWithNfc message (52 bytes / 104 hex chars):
  *   tokenId[32] | spender[20]
  *
  * cancelAuction message  (32 bytes / 64 hex chars):
  *   auctionId[32]
  */
+
+export const ZERO_ADDRESS =
+  "0x0000000000000000000000000000000000000000" as const;
 
 export const AUCTION_CONTRACT_ADDRESS =
   (process.env.NEXT_PUBLIC_AUCTION_CONTRACT_ADDRESS as `0x${string}`) ??
@@ -40,11 +46,20 @@ export const AUCTION_CONTRACT_ABI = [
   },
   {
     type: "event",
+    name: "BidPayerLinked",
+    inputs: [
+      { name: "payer",       type: "address", indexed: true },
+      { name: "nfcBracelet", type: "address", indexed: true },
+    ],
+  },
+  {
+    type: "event",
     name: "BidPlaced",
     inputs: [
-      { name: "auctionId", type: "uint256", indexed: true },
-      { name: "bidder",    type: "address", indexed: true },
-      { name: "amount",    type: "uint256", indexed: false },
+      { name: "auctionId",    type: "uint256", indexed: true },
+      { name: "payer",        type: "address", indexed: true },
+      { name: "nftRecipient", type: "address", indexed: true },
+      { name: "amount",       type: "uint256", indexed: false },
     ],
   },
   {
@@ -53,6 +68,7 @@ export const AUCTION_CONTRACT_ABI = [
     inputs: [
       { name: "auctionId", type: "uint256", indexed: true },
       { name: "winner",    type: "address", indexed: true },
+      { name: "payer",     type: "address", indexed: true },
       { name: "amount",    type: "uint256", indexed: false },
     ],
   },
@@ -64,6 +80,19 @@ export const AUCTION_CONTRACT_ABI = [
     ],
   },
   // ── State-changing functions ───────────────────────────────────────────────
+  {
+    type: "function",
+    name: "registerBidPayer",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "v",       type: "uint8" },
+      { name: "r",       type: "bytes32" },
+      { name: "s",       type: "bytes32" },
+      { name: "hash",    type: "bytes32" },
+      { name: "message", type: "bytes" },
+    ],
+    outputs: [],
+  },
   {
     type: "function",
     name: "createAuction",
@@ -128,15 +157,16 @@ export const AUCTION_CONTRACT_ABI = [
       {
         type: "tuple",
         components: [
-          { name: "nftContract",   type: "address" },
-          { name: "tokenId",       type: "uint256" },
-          { name: "seller",        type: "address" },
-          { name: "payerWallet",   type: "address" },
-          { name: "startPrice",    type: "uint256" },
-          { name: "endTime",       type: "uint256" },
-          { name: "highestBidder", type: "address" },
-          { name: "highestBid",    type: "uint256" },
-          { name: "finalized",     type: "bool" },
+          { name: "nftContract",          type: "address" },
+          { name: "tokenId",              type: "uint256" },
+          { name: "seller",               type: "address" },
+          { name: "payerWallet",          type: "address" },
+          { name: "startPrice",           type: "uint256" },
+          { name: "endTime",              type: "uint256" },
+          { name: "highestPayer",         type: "address" },
+          { name: "highestNftRecipient",  type: "address" },
+          { name: "highestBid",           type: "uint256" },
+          { name: "finalized",            type: "bool" },
         ],
       },
     ],
@@ -157,6 +187,20 @@ export const AUCTION_CONTRACT_ABI = [
   },
   {
     type: "function",
+    name: "bidLinkNonces",
+    stateMutability: "view",
+    inputs: [{ name: "bracelet", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "bidPayerToNfc",
+    stateMutability: "view",
+    inputs: [{ name: "payer", type: "address" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
     name: "pendingRefunds",
     stateMutability: "view",
     inputs: [{ name: "account", type: "address" }],
@@ -167,15 +211,16 @@ export const AUCTION_CONTRACT_ABI = [
 // ── TypeScript type ────────────────────────────────────────────────────────
 
 export type AuctionData = {
-  nftContract:   `0x${string}`;
-  tokenId:       bigint;
-  seller:        `0x${string}`;
-  payerWallet:   `0x${string}`;
-  startPrice:    bigint;
-  endTime:       bigint;
-  highestBidder: `0x${string}`;
-  highestBid:    bigint;
-  finalized:     boolean;
+  nftContract:          `0x${string}`;
+  tokenId:              bigint;
+  seller:               `0x${string}`;
+  payerWallet:          `0x${string}`;
+  startPrice:           bigint;
+  endTime:              bigint;
+  highestPayer:         `0x${string}`;
+  highestNftRecipient:  `0x${string}`;
+  highestBid:           bigint;
+  finalized:            boolean;
 };
 
 // ── Message encoding helpers ───────────────────────────────────────────────
@@ -194,6 +239,20 @@ export function encodeApproveMessage(
   // spender: 20 bytes (strip 0x)
   const spenderHex = spender.slice(2).toLowerCase().padStart(40, "0");
   return tokenIdHex + spenderHex; // 104 hex chars = 52 bytes
+}
+
+/**
+ * Encode the bracelet message for PaintAuction.registerBidPayer.
+ * Layout: payerWallet[20] | bidLinkNonce[32]  (52 bytes = 104 hex chars)
+ * bidLinkNonce must match bidLinkNonces[bracelet] on-chain for the signing bracelet.
+ */
+export function encodeRegisterBidPayerMessage(
+  payerWallet: `0x${string}`,
+  bidLinkNonce: bigint
+): string {
+  const payerHex = payerWallet.slice(2).toLowerCase().padStart(40, "0");
+  const nonceHex = bidLinkNonce.toString(16).padStart(64, "0");
+  return payerHex + nonceHex;
 }
 
 /**

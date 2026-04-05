@@ -6,6 +6,7 @@ import { useReadContract, usePublicClient } from "wagmi";
 import {
   AUCTION_CONTRACT_ADDRESS,
   AUCTION_CONTRACT_ABI,
+  ZERO_ADDRESS,
   type AuctionData,
 } from "@/lib/auction-contract";
 import { NFT_CONTRACT_ADDRESS, NFT_CONTRACT_ABI } from "@/lib/nft-contract";
@@ -27,7 +28,8 @@ interface NftMeta {
 }
 
 interface BidEvent {
-  bidder: string;
+  payer: string;
+  nftRecipient: string;
   amount: bigint;
   blockNumber: bigint;
 }
@@ -90,9 +92,10 @@ export default function AuctionDetailClient({ auctionId }: Props) {
             type: "event",
             name: "BidPlaced",
             inputs: [
-              { name: "auctionId", type: "uint256", indexed: true },
-              { name: "bidder",    type: "address", indexed: true },
-              { name: "amount",    type: "uint256", indexed: false },
+              { name: "auctionId",    type: "uint256", indexed: true },
+              { name: "payer",        type: "address", indexed: true },
+              { name: "nftRecipient", type: "address", indexed: true },
+              { name: "amount",       type: "uint256", indexed: false },
             ],
           },
           args: { auctionId: BigInt(auctionId) },
@@ -100,11 +103,19 @@ export default function AuctionDetailClient({ auctionId }: Props) {
         });
         if (cancelled) return;
         const parsed: BidEvent[] = logs
-          .map((log) => ({
-            bidder: (log.args as { bidder?: string }).bidder ?? "",
-            amount: (log.args as { amount?: bigint }).amount ?? BigInt(0),
-            blockNumber: log.blockNumber ?? BigInt(0),
-          }))
+          .map((log) => {
+            const a = log.args as {
+              payer?: string;
+              nftRecipient?: string;
+              amount?: bigint;
+            };
+            return {
+              payer: a.payer ?? "",
+              nftRecipient: a.nftRecipient ?? "",
+              amount: a.amount ?? BigInt(0),
+              blockNumber: log.blockNumber ?? BigInt(0),
+            };
+          })
           .reverse(); // newest first
         setBids(parsed);
       } catch {
@@ -130,7 +141,7 @@ export default function AuctionDetailClient({ auctionId }: Props) {
     );
   }
 
-  const hasBids = auction.highestBidder !== "0x0000000000000000000000000000000000000000";
+  const hasBids = auction.highestPayer !== ZERO_ADDRESS;
 
   return (
     <main className="mx-auto w-full max-w-[1280px] px-5 py-8">
@@ -191,12 +202,20 @@ export default function AuctionDetailClient({ auctionId }: Props) {
             </div>
 
             {hasBids && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-muted">Highest bidder</span>
-                <span className="font-mono text-sm text-ink">
-                  {auction.highestBidder.slice(0,6)}…{auction.highestBidder.slice(-4)}
-                </span>
-              </div>
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-muted">NFT recipient (bracelet)</span>
+                  <span className="font-mono text-sm text-ink">
+                    {auction.highestNftRecipient.slice(0,6)}…{auction.highestNftRecipient.slice(-4)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-muted">Paid from</span>
+                  <span className="font-mono text-sm text-ink">
+                    {auction.highestPayer.slice(0,6)}…{auction.highestPayer.slice(-4)}
+                  </span>
+                </div>
+              </>
             )}
 
             <div className="flex items-center justify-between">
@@ -227,12 +246,17 @@ export default function AuctionDetailClient({ auctionId }: Props) {
               <h3 className="text-sm font-bold text-ink">Bid history</h3>
               <div className="flex flex-col gap-1">
                 {bids.map((bid, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs">
-                    <span className="font-mono text-muted">
-                      {bid.bidder.slice(0,6)}…{bid.bidder.slice(-4)}
-                    </span>
-                    <span className="font-semibold text-ink">
-                      {formatEther(bid.amount)} USDC
+                  <div key={i} className="flex flex-col gap-0.5 text-xs border-b border-line/30 pb-1 last:border-0">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-muted">
+                        pay {bid.payer.slice(0,6)}…{bid.payer.slice(-4)}
+                      </span>
+                      <span className="font-semibold text-ink">
+                        {formatEther(bid.amount)} USDC
+                      </span>
+                    </div>
+                    <span className="font-mono text-muted text-[10px]">
+                      NFT → {bid.nftRecipient.slice(0,6)}…{bid.nftRecipient.slice(-4)}
                     </span>
                   </div>
                 ))}
