@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAccount, useReadContract } from "wagmi";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import {
+  ConnectButton,
+  useAccountModal,
+  useChainModal,
+} from "@rainbow-me/rainbowkit";
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from "@/lib/contract";
 
 const NAV_LINKS = [
@@ -15,6 +19,97 @@ const NAV_LINKS = [
   { href: "/auctions", label: "Auctions" },
   { href: "/admin", label: "Admin", adminOnly: true },
 ];
+
+function NavbarAccountControls() {
+  /** Les props `openAccountModal` de ConnectButton.Custom sont remplacées par un noop quand
+   *  le réseau n’est pas dans la config ou que `chainId` est encore indéfini — d’où des clics sans effet. */
+  const { openAccountModal } = useAccountModal();
+  const { openChainModal } = useChainModal();
+
+  const openAccountOrFixNetwork = () => {
+    if (openAccountModal) openAccountModal();
+    else openChainModal?.();
+  };
+
+  return (
+    <ConnectButton.Custom>
+      {({ account, chain, mounted }) => {
+        if (!mounted || !account) return null;
+
+        const shortAddr =
+          account.address.length >= 10
+            ? `${account.address.slice(0, 4)}…${account.address.slice(-4)}`
+            : account.displayName;
+
+        const wrongNetwork = chain?.unsupported === true;
+
+        const chainBtnClass =
+          "flex h-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg border-2 bg-white shadow-[2px_2px_0_var(--color-line)] transition-[transform,box-shadow] active:translate-x-px active:translate-y-px active:shadow-[1px_1px_0_var(--color-line)] sm:h-9 sm:min-h-0 sm:min-w-0 sm:size-9 " +
+          (wrongNetwork
+            ? "border-danger shadow-[2px_2px_0_var(--color-danger)]"
+            : "border-line");
+
+        const accountBtnClass =
+          "flex h-11 min-h-[44px] min-w-[44px] items-center justify-center gap-2 rounded-lg border-2 bg-white px-2 shadow-[2px_2px_0_var(--color-line)] transition-[transform,box-shadow] active:translate-x-px active:translate-y-px active:shadow-[1px_1px_0_var(--color-line)] sm:h-9 sm:min-h-0 sm:min-w-0 sm:px-1.5 " +
+          (wrongNetwork
+            ? "border-danger shadow-[2px_2px_0_var(--color-danger)]"
+            : "border-line");
+
+        return (
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            {chain && (
+              <button
+                type="button"
+                onClick={() => openChainModal?.()}
+                className={chainBtnClass}
+                style={{ WebkitTapHighlightColor: "transparent" }}
+                aria-label={chain.name ? `Réseau : ${chain.name}` : "Changer de réseau"}
+              >
+                {chain.hasIcon && chain.iconUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    alt=""
+                    src={chain.iconUrl}
+                    className="size-5 rounded-full sm:size-5"
+                    style={{ background: chain.iconBackground }}
+                  />
+                ) : (
+                  <span className="text-[10px] font-bold text-ink">
+                    {(chain.name ?? "?").slice(0, 2).toUpperCase()}
+                  </span>
+                )}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => openAccountOrFixNetwork()}
+              className={accountBtnClass}
+              style={{ WebkitTapHighlightColor: "transparent" }}
+              aria-label={
+                wrongNetwork
+                  ? "Mauvais réseau — choisir un réseau ou le compte"
+                  : "Compte wallet"
+              }
+            >
+              {account.ensAvatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={account.ensAvatar}
+                  alt=""
+                  className="size-9 rounded-md object-cover sm:size-8"
+                />
+              ) : (
+                <span className="max-w-[5.5rem] truncate font-mono text-xs font-semibold text-ink sm:max-w-[4.5rem]">
+                  {shortAddr}
+                </span>
+              )}
+            </button>
+          </div>
+        );
+      }}
+    </ConnectButton.Custom>
+  );
+}
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -44,47 +139,41 @@ export default function Navbar() {
           WebkitBackdropFilter: "blur(18px)",
         }}
       >
-        <div className="mx-auto flex h-14 max-w-[1280px] items-center justify-between px-4 sm:h-16 sm:px-5">
+        <div className="mx-auto flex h-14 max-w-[1280px] items-center justify-between gap-3 px-4 sm:h-16 sm:px-5">
           {/* Brand */}
           <Link
             href="/"
-            className="flex items-center gap-2.5 no-underline"
+            className="flex min-w-0 shrink items-center gap-2.5 no-underline"
             style={{ WebkitTapHighlightColor: "transparent" }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/Gemini_Generated_Image_7gj2y07gj2y07gj2.jpeg"
               alt=""
-              style={{
-                height: "44px",
-                width: "44px",
-                objectFit: "contain",
-                borderRadius: "8px",
-              }}
+              className="size-9 shrink-0 object-contain sm:size-11"
+              style={{ borderRadius: "8px" }}
             />
-            <span className="text-xl font-bold tracking-[-0.03em] text-ink sm:text-2xl">
+            <span className="truncate text-lg font-bold tracking-[-0.03em] text-ink sm:text-2xl">
               PaintGlobal
             </span>
           </Link>
 
-          {/* Desktop nav links */}
-          <div className="hidden items-center gap-6 sm:flex">
-            {visibleLinks.map(({ href, label }) => (
-              <Link
-                key={href}
-                href={href}
-                className={`text-sm font-semibold no-underline transition-colors ${
-                  pathname === href ? "text-ink" : "text-muted hover:text-ink"
-                }`}
-              >
-                {label}
-              </Link>
-            ))}
-            <ConnectButton
-              accountStatus="avatar"
-              chainStatus="icon"
-              showBalance={false}
-            />
+          {/* Wallet : compte uniquement si connecté (connexion via Auctions, etc.) */}
+          <div className="flex min-w-0 items-center justify-end gap-3 sm:gap-6">
+            <div className="hidden items-center gap-6 sm:flex">
+              {visibleLinks.map(({ href, label }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`text-sm font-semibold whitespace-nowrap no-underline transition-colors ${
+                    pathname === href ? "text-ink" : "text-muted hover:text-ink"
+                  }`}
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
+            <NavbarAccountControls />
           </div>
         </div>
       </nav>
@@ -150,7 +239,7 @@ export default function Navbar() {
             <rect x="10.5" y="8" width="3" height="13" rx="1.5" />
             <rect x="3" y="13" width="3" height="8" rx="1.5" />
           </svg>
-          Leaderboard
+          Ranking
         </Link>
 
         <Link

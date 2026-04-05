@@ -204,21 +204,33 @@ export default function BidForm({ auctionId, auction, onBidPlaced }: Props) {
   /** UI seulement : le contrat reste appelable par tous. */
   const canFinalize = isSeller || isWinningPayer;
 
+  /* WalletConnect peut exposer l'adresse pendant `status === 'connecting'` avec `isConnected` encore false. */
   if (!isConnected) {
-    if (ended && !auction.finalized) {
+    if (!address) {
+      if (ended && !auction.finalized) {
+        return (
+          <div className="card-brutalist p-5 flex flex-col items-center gap-4">
+            <p className="text-sm text-muted text-center">
+              This auction has ended. Connect with the seller or winning wallet to finalize settlement.
+            </p>
+            <ConnectButton />
+          </div>
+        );
+      }
       return (
         <div className="card-brutalist p-5 flex flex-col items-center gap-4">
-          <p className="text-sm text-muted text-center">
-            This auction has ended. Connect with the seller or winning wallet to finalize settlement.
-          </p>
+          <p className="text-sm text-muted text-center">Connect a wallet to place a bid.</p>
           <ConnectButton />
         </div>
       );
     }
     return (
       <div className="card-brutalist p-5 flex flex-col items-center gap-4">
-        <p className="text-sm text-muted text-center">Connect a wallet to place a bid.</p>
-        <ConnectButton />
+        <p className="text-sm text-muted text-center">Finishing wallet connection…</p>
+        <div
+          className="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-accent"
+          aria-hidden
+        />
       </div>
     );
   }

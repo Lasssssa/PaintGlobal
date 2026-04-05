@@ -49,7 +49,8 @@ function Spinner() {
 export default function CreateAuctionStepper() {
   const router = useRouter();
   const { nfcAddress, setNfcAddress } = useContext(NfcIdentityContext);
-  const { address: walletAddress, isConnected } = useAccount();
+  const { address: walletAddress } = useAccount();
+  const walletAddressReady = Boolean(walletAddress);
 
   const [step, setStep] = useState<Step>(nfcAddress ? "connect-wallet" : "identity");
   const [note, setNote] = useState("");
@@ -77,12 +78,12 @@ export default function CreateAuctionStepper() {
 
   const hasNfc = typeof window !== "undefined" && isNfcAvailable();
 
-  // Wallet connecté → enchaîner tout de suite sur le choix du NFT (sans bouton « Continue »).
+  // Dès que l'adresse est connue (même si `isConnected` est encore false pendant WC), passer à l'étape suivante.
   useEffect(() => {
-    if (step === "connect-wallet" && isConnected && walletAddress) {
+    if (step === "connect-wallet" && walletAddressReady) {
       setStep("select-nft");
     }
-  }, [step, isConnected, walletAddress]);
+  }, [step, walletAddressReady]);
 
   // ── Step: identity ────────────────────────────────────────────────────────
 
@@ -249,7 +250,7 @@ export default function CreateAuctionStepper() {
           Bracelet: <span className="font-mono">{nfcAddress?.slice(0,6)}…{nfcAddress?.slice(-4)}</span>
         </p>
         <ConnectButton />
-        {isConnected && walletAddress && (
+        {walletAddress && (
           <p className="text-sm text-muted text-center">
             Proceeds wallet:{" "}
             <span className="font-mono font-semibold text-ink">
