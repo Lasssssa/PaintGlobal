@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useContext } from "react";
+import { useState, useContext, useEffect } from "react";
 import { parseEther } from "viem";
 import { useAccount } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
@@ -76,6 +76,13 @@ export default function CreateAuctionStepper() {
   });
 
   const hasNfc = typeof window !== "undefined" && isNfcAvailable();
+
+  // Wallet connecté → enchaîner tout de suite sur le choix du NFT (sans bouton « Continue »).
+  useEffect(() => {
+    if (step === "connect-wallet" && isConnected && walletAddress) {
+      setStep("select-nft");
+    }
+  }, [step, isConnected, walletAddress]);
 
   // ── Step: identity ────────────────────────────────────────────────────────
 
@@ -243,20 +250,12 @@ export default function CreateAuctionStepper() {
         </p>
         <ConnectButton />
         {isConnected && walletAddress && (
-          <>
-            <p className="text-sm text-muted text-center">
-              Payer wallet:{" "}
-              <span className="font-mono font-semibold text-ink">
-                {walletAddress.slice(0,6)}…{walletAddress.slice(-4)}
-              </span>
-            </p>
-            <button
-              onClick={() => setStep("select-nft")}
-              className="btn-brutalist btn-primary px-8 py-3 text-base w-full"
-            >
-              Continue
-            </button>
-          </>
+          <p className="text-sm text-muted text-center">
+            Proceeds wallet:{" "}
+            <span className="font-mono font-semibold text-ink">
+              {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}
+            </span>
+          </p>
         )}
       </div>
     );
@@ -264,20 +263,16 @@ export default function CreateAuctionStepper() {
 
   if (step === "select-nft") {
     return (
-      <div className="card-brutalist mx-auto max-w-md flex flex-col gap-6 p-8">
-        <h2 className="text-lg font-bold text-ink">Select an NFT to auction</h2>
+      <div className="card-brutalist mx-auto flex w-full max-w-xl flex-col gap-5 p-6 sm:max-w-2xl sm:p-8">
+        <h2 className="text-lg font-bold text-ink">Pick an NFT to sell</h2>
         <MyNFTSelector
           ownerAddress={nfcAddress as `0x${string}`}
           selectedTokenId={selectedTokenId}
-          onSelect={setSelectedTokenId}
+          onSelect={(tokenId) => {
+            setSelectedTokenId(tokenId);
+            setStep("set-params");
+          }}
         />
-        <button
-          onClick={() => setStep("set-params")}
-          disabled={selectedTokenId === null}
-          className="btn-brutalist btn-primary w-full"
-        >
-          {selectedTokenId !== null ? `Auction NFT #${selectedTokenId.toString()}` : "Select an NFT"}
-        </button>
       </div>
     );
   }
@@ -301,7 +296,7 @@ export default function CreateAuctionStepper() {
               setErrorMsg("");
             }}
             placeholder="e.g. 1.0"
-            className="border-2 border-line rounded-[var(--radius-sm)] px-3 py-2 text-sm font-mono bg-paper text-ink focus:outline-none focus:border-accent"
+            className="input-brutalist font-mono"
           />
         </div>
 
@@ -333,6 +328,14 @@ export default function CreateAuctionStepper() {
           <p>NFT: <span className="font-mono font-semibold text-ink">#{selectedTokenId?.toString()}</span></p>
           <p>Proceeds go to: <span className="font-mono font-semibold text-ink">{walletAddress?.slice(0,6)}…{walletAddress?.slice(-4)}</span></p>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setStep("select-nft")}
+          className="w-full text-center text-sm font-semibold text-muted underline decoration-2 underline-offset-2 hover:text-ink"
+        >
+          Change NFT
+        </button>
 
         <button
           onClick={() => {
