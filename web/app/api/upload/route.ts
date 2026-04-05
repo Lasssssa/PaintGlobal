@@ -1,5 +1,8 @@
-import { PinataSDK } from "pinata";
+import { PinataSDK, PinataError } from "pinata";
 import { NextRequest, NextResponse } from "next/server";
+
+const FILE_TOO_LARGE =
+  "The uploaded file is too large, please choose another one.";
 
 const pinata = new PinataSDK({
   pinataJwt: process.env.PINATA_JWT!,
@@ -20,6 +23,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ cid: result.cid });
   } catch (err) {
     console.error("IPFS upload error:", err);
+
+    const tooLarge =
+      (err instanceof PinataError && err.statusCode === 413) ||
+      (err instanceof Error && /\b413\b/.test(err.message));
+
+    if (tooLarge) {
+      return NextResponse.json({ error: FILE_TOO_LARGE }, { status: 413 });
+    }
+
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
   }

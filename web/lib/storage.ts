@@ -30,7 +30,13 @@ async function pinFile(file: File): Promise<string> {
   const res = await fetch("/api/upload", { method: "POST", body: form });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (res.status === 413) {
+      throw new Error(
+        body.error ??
+          "The uploaded file is too large, please choose another one."
+      );
+    }
     throw new Error(body.error ?? `Upload failed (${res.status})`);
   }
 
