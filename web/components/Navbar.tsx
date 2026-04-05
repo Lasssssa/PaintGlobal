@@ -13,6 +13,7 @@ const NAV_LINKS = [
   { href: "/upload", label: "Upload" },
   { href: "/leaderboard", label: "Leaderboard" },
   { href: "/collection", label: "Collection" },
+  { href: "/auctions", label: "Auctions" },
   { href: "/admin", label: "Admin", adminOnly: true },
 ];
 
@@ -138,6 +139,20 @@ export default function Navbar() {
             <path d="M16 3h-8l-2 4h12l-2-4z" />
           </svg>
           Collection
+        </Link>
+
+        <Link href="/auctions" className={`bottom-nav-link ${pathname.startsWith("/auctions") ? "active" : ""}`}>
+          <svg width="22" height="22" viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={pathname.startsWith("/auctions") ? "2.2" : "1.8"}
+            strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 3l7 7" />
+            <path d="M7.5 3.5l3 3" />
+            <path d="M13 9l8 8-3 3-8-8" />
+            <path d="M4 20l4-4" />
+          </svg>
+          Auctions
         </Link>
 
         {isAdmin && (

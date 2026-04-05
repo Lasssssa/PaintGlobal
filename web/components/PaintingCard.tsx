@@ -88,8 +88,13 @@ export default function PaintingCard({ paintingId, metadata, voteCount }: Props)
         if (evt.cause === "scanned") setMintNote("Scanned!");
       });
 
-      if (!nfcAddress) {
-        setNfcAddress(sig.signerAddress);
+      // Always update nfcAddress with the actual signer from this tap.
+      setNfcAddress(sig.signerAddress);
+
+      // Guard: the bracelet just tapped must be the painting's author.
+      // Catches the "wrong bracelet" case before wasting a relay call.
+      if (sig.signerAddress.toLowerCase() !== metadata.author.toLowerCase()) {
+        throw new Error("Wrong bracelet — this painting belongs to a different bracelet");
       }
 
       setMintStep("submitting");
@@ -121,6 +126,7 @@ export default function PaintingCard({ paintingId, metadata, voteCount }: Props)
       let msg = err instanceof Error ? err.message : "Mint failed";
       if (name === "NFCMethodNotSupported") msg = "NFC not supported on this device";
       else if (name === "NFCPermissionRequestDenied") msg = "NFC permission denied";
+      else if (msg.includes("Wrong bracelet")) msg = "Wrong bracelet — use the bracelet that submitted this painting";
       else if (msg.includes("not the author")) msg = "Only the author can mint this painting";
       else if (msg.includes("already minted")) msg = "This painting has already been minted";
       setMintStep("error");
