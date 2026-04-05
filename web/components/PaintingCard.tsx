@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useContext } from "react";
+import { useState, useContext, useRef, useEffect } from "react";
 import { useReadContract } from "wagmi";
 import { fetchImageUrl, type PaintingMetadata } from "@/lib/storage";
 import { NFT_CONTRACT_ADDRESS, NFT_CONTRACT_ABI } from "@/lib/nft-contract";
@@ -11,6 +11,8 @@ interface Props {
   paintingId: number;
   metadata: PaintingMetadata;
   voteCount: number;
+  /** Clic sur la vignette → lightbox (galerie). */
+  onImageClick?: (payload: { src: string; title: string }) => void;
 }
 
 async function uploadNftMetadata(title: string, imageCID: string): Promise<string> {
@@ -30,9 +32,9 @@ async function uploadNftMetadata(title: string, imageCID: string): Promise<strin
   return cid;
 }
 
-type MintStep = "idle" | "uploading" | "nfc-signing" | "submitting" | "done" | "error";
+type MintStep = "idle" | "uploading" | "nfc-signing" | "submitting" | "error";
 
-export default function PaintingCard({ paintingId, metadata, voteCount }: Props) {
+export default function PaintingCard({ paintingId, metadata, voteCount, onImageClick }: Props) {
   const imgSrc = fetchImageUrl(metadata.imageCID);
   const { nfcAddress, setNfcAddress } = useContext(NfcIdentityContext);
 
@@ -46,6 +48,14 @@ export default function PaintingCard({ paintingId, metadata, voteCount }: Props)
   // justMinted : flag local pour cacher le bouton immédiatement après le mint,
   // sans attendre la confirmation on-chain (latence réseau).
   const [justMinted, setJustMinted] = useState(false);
+  const [mintSuccessToast, setMintSuccessToast] = useState(false);
+  const mintToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (mintToastTimer.current) clearTimeout(mintToastTimer.current);
+    };
+  }, []);
 
   const { data: alreadyMinted, refetch: refetchMinted } = useReadContract({
     address: NFT_CONTRACT_ADDRESS,
@@ -117,10 +127,16 @@ export default function PaintingCard({ paintingId, metadata, voteCount }: Props)
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Mint relay failed");
 
-      setMintStep("done");
-      setMintNote("NFT minted! 🎉");
-      setJustMinted(true);   // cache le bouton immédiatement
-      refetchMinted();        // resynchronise avec la chain en arrière-plan
+      setMintStep("idle");
+      setMintNote("");
+      setJustMinted(true);
+      refetchMinted();
+      if (mintToastTimer.current) clearTimeout(mintToastTimer.current);
+      setMintSuccessToast(true);
+      mintToastTimer.current = setTimeout(() => {
+        setMintSuccessToast(false);
+        mintToastTimer.current = null;
+      }, 4500);
     } catch (err) {
       const name = err instanceof Error ? err.name : "";
       let msg = err instanceof Error ? err.message : "Mint failed";
@@ -138,14 +154,13 @@ export default function PaintingCard({ paintingId, metadata, voteCount }: Props)
     }
   };
 
-  const busy = mintStep !== "idle" && mintStep !== "done" && mintStep !== "error";
+  const busy = mintStep !== "idle" && mintStep !== "error";
 
   const buttonLabel: Record<MintStep, string> = {
     idle: "Mint NFT",
     uploading: "Uploading…",
     "nfc-signing": "Waiting for NFC…",
     submitting: "Minting…",
-    done: "Minted!",
     error: "Try again",
   };
 
@@ -154,14 +169,31 @@ export default function PaintingCard({ paintingId, metadata, voteCount }: Props)
 
   return (
     <div className="card-brutalist flex flex-col">
-      <div className="relative border-b-2 border-line h-48 overflow-hidden">
+      <div className="relative h-48 overflow-hidden border-b-2 border-line">
         {imgSrc ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={imgSrc}
-            alt={metadata.title}
-            className="h-full w-full object-cover"
-          />
+          onImageClick ? (
+            <button
+              type="button"
+              onClick={() => onImageClick({ src: imgSrc, title: metadata.title })}
+              className="absolute inset-0 block h-full w-full cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+              aria-label={`View “${metadata.title}” full size`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imgSrc}
+                alt=""
+                className="pointer-events-none h-full w-full object-cover"
+                aria-hidden
+              />
+            </button>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={imgSrc}
+              alt={metadata.title}
+              className="h-full w-full object-cover"
+            />
+          )
         ) : (
           <div
             className="flex h-full items-center justify-center text-4xl text-muted"
@@ -171,7 +203,7 @@ export default function PaintingCard({ paintingId, metadata, voteCount }: Props)
           </div>
         )}
 
-        <span className="count-pill absolute top-2.5 right-3">
+        <span className="count-pill pointer-events-none absolute right-3 top-2.5 z-[1]">
           {voteCount} {voteCount !== 1 ? "supporters" : "supporter"}
         </span>
       </div>
@@ -208,6 +240,16 @@ export default function PaintingCard({ paintingId, metadata, voteCount }: Props)
           <p className="text-xs font-semibold text-danger">{mintNote}</p>
         )}
       </div>
+
+      {mintSuccessToast && (
+        <div
+          className="pointer-events-none fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] left-1/2 z-[100] w-[min(92vw,20rem)] -translate-x-1/2 rounded-[var(--radius-base)] border-2 border-line bg-paper px-4 py-3 text-center text-sm font-semibold text-ink shadow-[4px_4px_0_var(--color-line)] sm:bottom-8"
+          role="status"
+          aria-live="polite"
+        >
+          NFT minted successfully.
+        </div>
+      )}
     </div>
   );
 }

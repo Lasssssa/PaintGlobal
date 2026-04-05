@@ -19,6 +19,8 @@ interface RankedPainting {
   author: string;
   votes: number;
   imgSrc: string;
+  /** 1-based dense rank: same vote count → same rank (e.g. two #1, then #2). */
+  rank: number;
 }
 
 function paintingTuple(
@@ -96,9 +98,14 @@ export default function LeaderboardClient() {
           voteResult?.result !== undefined
             ? Number(voteResult.result as bigint)
             : 0;
-        items.push({ id: index, metadata, author: row.author, votes, imgSrc });
+        items.push({ id: index, metadata, author: row.author, votes, imgSrc, rank: 1 });
       }
-      items.sort((a, b) => b.votes - a.votes);
+      items.sort((a, b) => b.votes - a.votes || a.id - b.id);
+      let rank = 1;
+      for (let i = 0; i < items.length; i++) {
+        if (i > 0 && items[i].votes < items[i - 1].votes) rank++;
+        items[i] = { ...items[i], rank };
+      }
       setRanked(items);
     } finally {
       setLoading(false);
@@ -176,7 +183,9 @@ export default function LeaderboardClient() {
                 "linear-gradient(135deg,#d1d5db,#9ca3af)",
                 "linear-gradient(135deg,#f97316,#c2410c)",
               ];
-              const isTop3 = index < 3;
+              const r = p.rank;
+              const isTop3 = r <= 3;
+              const medalIdx = r - 1;
               return (
                 <li
                   key={p.id}
@@ -184,9 +193,9 @@ export default function LeaderboardClient() {
                   style={{
                     boxShadow: isTop3
                       ? `0 2px 16px rgba(0,0,0,0.07), inset 0 0 0 1.5px ${
-                          index === 0
+                          r === 1
                             ? "rgba(251,191,36,0.45)"
-                            : index === 1
+                            : r === 2
                               ? "rgba(209,213,219,0.6)"
                               : "rgba(249,115,22,0.35)"
                         }`
@@ -200,15 +209,15 @@ export default function LeaderboardClient() {
                       <span
                         className="flex h-8 w-8 items-center justify-center rounded-full text-sm"
                         style={{
-                          background: medalColors[index],
+                          background: medalColors[medalIdx],
                           boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
                         }}
                       >
-                        {medals[index]}
+                        {medals[medalIdx]}
                       </span>
                     ) : (
                       <span className="font-mono text-sm font-bold text-muted">
-                        #{index + 1}
+                        #{r}
                       </span>
                     )}
                   </div>
@@ -250,7 +259,7 @@ export default function LeaderboardClient() {
                       className="font-mono font-black leading-none"
                       style={{
                         fontSize: "1.15rem",
-                        color: index === 0 ? "#f59e0b" : "var(--color-ink)",
+                        color: r === 1 ? "#f59e0b" : "var(--color-ink)",
                       }}
                     >
                       {p.votes}

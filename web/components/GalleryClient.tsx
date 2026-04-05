@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useReadContract, useReadContracts } from "wagmi";
 import { CONTRACT_ADDRESS, CONTRACT_ABI, PAINTING_STATUS } from "@/lib/contract";
 import { fetchMetadata, type PaintingMetadata } from "@/lib/storage";
@@ -29,6 +30,7 @@ export default function GalleryClient() {
   const [paintings, setPaintings] = useState<Painting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [lightbox, setLightbox] = useState<{ src: string; title: string } | null>(null);
 
   const { data: countBn, refetch: refetchCount } = useReadContract({
     address: CONTRACT_ADDRESS,
@@ -120,6 +122,20 @@ export default function GalleryClient() {
     refetchVotes();
   }, [refetchCount, refetchPaintings, refetchVotes]);
 
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(null);
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [lightbox]);
+
   return (
     <main>
       {/* Hero — peinture impressionniste ETHGlobal Cannes */}
@@ -195,12 +211,30 @@ export default function GalleryClient() {
         </div>
       </div>
 
+      {/* Upload — accès mobile sans encombrer la barre du bas */}
+      <div className="mx-auto flex w-full max-w-[1280px] justify-end px-4 pt-3 sm:px-5">
+        <Link
+          href="/upload"
+          className="btn-brutalist btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold no-underline"
+          style={{ WebkitTapHighlightColor: "transparent" }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+          Upload
+        </Link>
+      </div>
+
       {/* Grid */}
       <div className="mx-auto w-full max-w-[1280px] px-4 pb-10 pt-2 sm:px-5">
         <div className="mb-5 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-bold tracking-tight text-ink sm:text-xl">All paintings</h2>
-            <p className="mt-0.5 text-sm text-muted">Tap your NFC bracelet on each card to vote</p>
+            <p className="mt-0.5 text-sm text-muted">
+              Tap a painting to view it large · use your NFC bracelet on a card to vote
+            </p>
           </div>
         </div>
 
@@ -238,11 +272,59 @@ export default function GalleryClient() {
                 paintingId={p.id}
                 metadata={p.metadata}
                 voteCount={p.votes}
+                onImageClick={(payload) => setLightbox(payload)}
               />
             ))}
           </div>
         )}
       </div>
+
+      {lightbox &&
+        createPortal(
+          <>
+            <button
+              type="button"
+              className="fixed inset-0 z-[200] cursor-default border-0 bg-black/90 p-0"
+              aria-label="Close enlarged image"
+              onClick={() => setLightbox(null)}
+              style={{ WebkitTapHighlightColor: "transparent" }}
+            />
+            <div
+              className="pointer-events-none fixed inset-0 z-[201] flex flex-col"
+              role="dialog"
+              aria-modal="true"
+              aria-label={lightbox.title}
+            >
+              <div className="pointer-events-auto flex shrink-0 justify-end p-3 pb-0 sm:p-4">
+                <button
+                  type="button"
+                  onClick={() => setLightbox(null)}
+                  className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-sm)] border-2 border-white/30 bg-black/40 text-2xl font-light leading-none text-white transition-colors hover:border-white/60 hover:bg-black/60"
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <div
+                className="pointer-events-auto flex min-h-0 flex-1 items-center justify-center px-3 pb-6 pt-2 sm:px-6 sm:pb-8"
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) setLightbox(null);
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={lightbox.src}
+                  alt={lightbox.title}
+                  className="max-h-[min(85vh,100%)] max-w-full object-contain shadow-2xl"
+                />
+              </div>
+              <p className="pointer-events-none shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-center text-sm font-semibold text-white/90">
+                {lightbox.title}
+              </p>
+            </div>
+          </>,
+          document.body,
+        )}
     </main>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useContext, useEffect, useState } from "react";
+import { useState, useEffect, useContext } from "react";
 import { parseEther, formatEther } from "viem";
 import {
   useAccount,
@@ -19,6 +19,11 @@ import {
 import { NfcIdentityContext } from "@/lib/nfc-context";
 import { isNfcAvailable, signWithNfc, type NfcStatusEvent } from "@/lib/nfc";
 
+function addrEq(a?: string | null, b?: string | null): boolean {
+  if (!a || !b) return false;
+  return a.toLowerCase() === b.toLowerCase();
+}
+
 interface Props {
   auctionId: number;
   auction: AuctionData;
@@ -31,7 +36,7 @@ export default function BidForm({ auctionId, auction, onBidPlaced }: Props) {
 
   const hasBids = auction.highestPayer !== ZERO_ADDRESS;
   const minBid = hasBids
-    ? formatEther((auction.highestBid * BigInt(105)) / BigInt(100)) // suggest +5%
+    ? formatEther((auction.highestBid * BigInt(105)) / BigInt(100))
     : formatEther(auction.startPrice);
 
   const [amount, setAmount] = useState(minBid);
@@ -178,9 +183,7 @@ export default function BidForm({ auctionId, auction, onBidPlaced }: Props) {
 
     const min = hasBids ? auction.highestBid + BigInt(1) : auction.startPrice;
     if (value < min) {
-      setError(
-        `Minimum bid is ${formatEther(min)} USDC`
-      );
+      setError(`Minimum bid is ${formatEther(min)} USDC`);
       return;
     }
 
@@ -194,54 +197,71 @@ export default function BidForm({ auctionId, auction, onBidPlaced }: Props) {
     });
   };
 
+  const isSeller = addrEq(address, auction.seller);
+  const isProceedsWallet = addrEq(address, auction.payerWallet);
+  const isWinningPayer = hasBids && addrEq(address, auction.highestPayer);
+
+  /** UI seulement : le contrat reste appelable par tous. */
+  const canFinalize = isSeller || isWinningPayer;
+
   if (!isConnected) {
+    if (ended && !auction.finalized) {
+      return (
+        <div className="card-brutalist p-5 flex flex-col items-center gap-4">
+          <p className="text-sm text-muted text-center">
+            This auction has ended. Connect with the seller or winning wallet to finalize settlement.
+          </p>
+          <ConnectButton />
+        </div>
+      );
+    }
     return (
       <div className="card-brutalist p-5 flex flex-col items-center gap-4">
-        <p className="text-sm text-muted text-center">
-          Connect a wallet to place a bid.
-        </p>
+        <p className="text-sm text-muted text-center">Connect a wallet to place a bid.</p>
         <ConnectButton />
       </div>
     );
   }
 
-  if (address?.toLowerCase() === auction.seller.toLowerCase()) {
-    return (
-      <div className="card-brutalist p-4">
-        <p className="text-sm text-muted text-center">You are the seller.</p>
-      </div>
-    );
-  }
-
-  if (ended && !auction.finalized) {
-    return (
-      <div className="card-brutalist p-4 flex flex-col gap-3">
-        <p className="text-sm font-semibold text-ink">Auction ended — ready to settle</p>
-        <button
-          onClick={() =>
-            writeFinalize({
-              address: AUCTION_CONTRACT_ADDRESS,
-              abi: AUCTION_CONTRACT_ABI,
-              functionName: "finalizeAuction",
-              args: [BigInt(auctionId)],
-            })
-          }
-          disabled={finalizePending || finalizeConfirming}
-          className="btn-brutalist btn-primary w-full"
-        >
-          {finalizePending || finalizeConfirming ? "Settling…" : "Finalize Auction"}
-        </button>
-        {finalizeSuccess && (
-          <p className="text-sm font-semibold text-accent text-center">Auction finalized!</p>
-        )}
-      </div>
-    );
-  }
-
-  if (ended || auction.finalized) {
+  if (auction.finalized) {
     return (
       <div className="card-brutalist p-4">
         <p className="text-sm text-muted text-center">This auction has ended.</p>
+      </div>
+    );
+  }
+
+  if (ended) {
+    if (canFinalize) {
+      return (
+        <div className="card-brutalist p-4 flex flex-col gap-3">
+          <p className="text-sm font-semibold text-ink">Auction ended — ready to settle</p>
+          <button
+            type="button"
+            onClick={() =>
+              writeFinalize({
+                address: AUCTION_CONTRACT_ADDRESS,
+                abi: AUCTION_CONTRACT_ABI,
+                functionName: "finalizeAuction",
+                args: [BigInt(auctionId)],
+              })
+            }
+            disabled={finalizePending || finalizeConfirming}
+            className="btn-brutalist btn-primary w-full"
+          >
+            {finalizePending || finalizeConfirming ? "Settling…" : "Finalize auction"}
+          </button>
+          {finalizeSuccess && (
+            <p className="text-sm font-semibold text-accent text-center">Auction finalized!</p>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div className="card-brutalist p-4">
+        <p className="text-sm text-muted text-center">
+          This auction has ended. Only the seller or the winning bidder can finalize settlement.
+        </p>
       </div>
     );
   }
@@ -292,6 +312,24 @@ export default function BidForm({ auctionId, auction, onBidPlaced }: Props) {
     );
   }
 
+  if (isSeller) {
+    return (
+      <div className="card-brutalist p-4">
+        <p className="text-sm text-muted text-center">You are the seller — you cannot bid on your own auction.</p>
+      </div>
+    );
+  }
+
+  if (isProceedsWallet) {
+    return (
+      <div className="card-brutalist p-4">
+        <p className="text-sm text-muted text-center">
+          This wallet receives auction proceeds — you cannot bid on your own listing.
+        </p>
+      </div>
+    );
+  }
+
   const bidBusy = bidPending || bidConfirming;
 
   return (
@@ -305,9 +343,7 @@ export default function BidForm({ auctionId, auction, onBidPlaced }: Props) {
       </p>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-semibold text-muted uppercase tracking-wide">
-          Amount (USDC)
-        </label>
+        <label className="text-xs font-semibold text-muted uppercase tracking-wide">Amount (USDC)</label>
         <input
           type="number"
           step="any"
@@ -317,18 +353,19 @@ export default function BidForm({ auctionId, auction, onBidPlaced }: Props) {
             setAmount(e.target.value);
             setError("");
           }}
-          className="border-2 border-line rounded-[var(--radius-sm)] px-3 py-2 text-sm font-mono bg-paper text-ink focus:outline-none focus:border-accent"
+          className="input-brutalist font-mono"
           placeholder={`Min ${minBid}`}
         />
         {error && <p className="text-xs text-danger font-semibold">{error}</p>}
       </div>
 
       <button
+        type="button"
         onClick={handleBid}
         disabled={bidBusy}
         className="btn-brutalist btn-primary w-full"
       >
-        {bidPending ? "Confirm in wallet…" : bidConfirming ? "Confirming…" : "Place Bid"}
+        {bidPending ? "Confirm in wallet…" : bidConfirming ? "Confirming…" : "Place bid"}
       </button>
 
       {bidSuccess && (

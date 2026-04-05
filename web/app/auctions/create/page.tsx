@@ -18,9 +18,7 @@ export default function CreateAuctionPage() {
       }
     >
       <main className="mx-auto w-full max-w-[1280px] px-5 py-8">
-        <h1 className="mb-8 text-3xl font-bold tracking-[-0.03em] text-ink">
-          Create Auction
-        </h1>
+        <h1 className="sr-only">Create auction</h1>
         <CreateAuctionStepper />
       </main>
     </ClientOnly>
