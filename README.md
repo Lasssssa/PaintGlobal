@@ -78,26 +78,6 @@ This is an on-chain **English auction** (**PaintAuction**): the seller (**NFC wr
   <img src="user-flow-paint-global.png" alt="PaintGlobal end-to-end user flow" style="max-width: 100%; height: auto;" />
 </p>
 
-```mermaid
-flowchart LR
-  subgraph vote ["🗳️ PaintVote"]
-    A[NFC painting submission] --> B[Owner moderation]
-    B --> C[Approved]
-    C --> D[NFC vote / tips]
-  end
-  subgraph nft ["🖼️ PaintNFT"]
-    C --> E[Mint NFT via relayer + author signature]
-    E --> F[On-chain collection]
-  end
-  subgraph auction ["🔨 PaintAuction"]
-    F --> G[approveWithNfc to auction contract]
-    G --> H[createAuction NFC escrow]
-    H --> I[Bidder: wallet + registerBidPayer NFC]
-    I --> J[Native USDC bids]
-    J --> K[Permissionless finalizeAuction]
-  end
-```
-
 **🧭 Short walkthrough:**
 
 1. ✍️ The author **submits** a work on PaintVote (NFC-signed); the contract **owner** approves or rejects.
