@@ -5,25 +5,24 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 /// @title PaintAuction — English auction for PaintGlobal NFTs
-/// @notice Sellers identify via NFC bracelet signature; bidders use any connected wallet.
-///         Payment is in native currency (USDC on ARC Testnet, 18 decimals).
-///         The seller designates a payerWallet at auction creation; this is the address
-///         that receives proceeds. The payerWallet is embedded in the bracelet-signed
-///         message, so only the real bracelet owner can authorise it (anti-spoofing).
+/// @notice Sellers identify via NFC bracelet signature; bidders pay from any connected wallet
+///         but receive the NFT on the bracelet after `registerBidPayer` links payer to NFC.
+///         The seller designates payerWallet at auction creation for sale proceeds.
 contract PaintAuction is ReentrancyGuard {
 
     // ─── Structs ──────────────────────────────────────────────────────────────
 
     struct Auction {
-        address nftContract;     // PaintNFT address
-        uint256 tokenId;         // ERC-721 token ID
-        address seller;          // bracelet address (original NFT owner)
-        address payerWallet;     // wallet that receives proceeds (connected via WalletConnect)
-        uint256 startPrice;      // minimum first bid (18-decimal native USDC)
-        uint256 endTime;         // unix timestamp when auction closes
-        address highestBidder;   // address(0) if no bids yet
-        uint256 highestBid;      // 0 if no bids yet
-        bool finalized;          // true after finalize or cancel
+        address nftContract;       // PaintNFT address
+        uint256 tokenId;           // ERC-721 token ID
+        address seller;            // bracelet address (original NFT owner)
+        address payerWallet;       // wallet that receives proceeds (connected via WalletConnect)
+        uint256 startPrice;        // minimum first bid (18-decimal native USDC)
+        uint256 endTime;           // unix timestamp when auction closes
+        address highestPayer;      // wallet that sent the winning bid (refunds go here)
+        address highestNftRecipient; // bracelet address that receives NFT on finalize
+        uint256 highestBid;        // 0 if no bids yet
+        bool finalized;            // true after finalize or cancel
     }
 
     // ─── State ────────────────────────────────────────────────────────────────
@@ -35,6 +34,12 @@ contract PaintAuction is ReentrancyGuard {
 
     /// @notice Per-bracelet nonce — prevents signature replay on createAuction.
     mapping(address => uint256) public nonces;
+
+    /// @notice Per-bracelet nonce for registerBidPayer (separate from createAuction nonces).
+    mapping(address => uint256) public bidLinkNonces;
+
+    /// @notice Connected wallet → NFC address that receives NFTs when this wallet wins bids.
+    mapping(address => address) public bidPayerToNfc;
 
     /// @notice Pull-payment fallback for bid refunds that fail due to gas or revert.
     mapping(address => uint256) public pendingRefunds;
@@ -50,19 +55,52 @@ contract PaintAuction is ReentrancyGuard {
         uint256 endTime
     );
 
+    event BidPayerLinked(address indexed payer, address indexed nfcBracelet);
+
     event BidPlaced(
         uint256 indexed auctionId,
-        address indexed bidder,
+        address indexed payer,
+        address indexed nftRecipient,
         uint256 amount
     );
 
     event AuctionFinalized(
         uint256 indexed auctionId,
         address indexed winner,
+        address indexed payer,
         uint256 amount
     );
 
     event AuctionCancelled(uint256 indexed auctionId);
+
+    // ─── registerBidPayer ─────────────────────────────────────────────────────
+
+    /// @notice Link msg.sender (paying wallet) to an NFC bracelet for bidding.
+    ///         The bracelet signs a 52-byte message: payer[20] | nonce[32].
+    ///         payer in the message must equal msg.sender.
+    ///
+    function registerBidPayer(
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        bytes32 hash,
+        bytes calldata message
+    ) external nonReentrant {
+        require(_messageToHash(message) == hash, "PaintAuction: invalid hash");
+        address signer = ecrecover(hash, v, r, s);
+        require(signer != address(0), "PaintAuction: invalid signature");
+
+        require(message.length == 52, "PaintAuction: bad message length");
+        address mPayer = address(bytes20(message[0:20]));
+        uint256 mNonce = uint256(bytes32(message[20:52]));
+
+        require(mPayer == msg.sender, "PaintAuction: payer mismatch");
+        require(bidLinkNonces[signer] == mNonce, "PaintAuction: invalid bid link nonce");
+        bidLinkNonces[signer]++;
+
+        bidPayerToNfc[msg.sender] = signer;
+        emit BidPayerLinked(msg.sender, signer);
+    }
 
     // ─── createAuction ────────────────────────────────────────────────────────
 
@@ -133,15 +171,16 @@ contract PaintAuction is ReentrancyGuard {
         // ── Store auction ──────────────────────────────────────────────────────
         auctionId = _nextAuctionId++;
         auctions[auctionId] = Auction({
-            nftContract:   nftContract,
-            tokenId:       tokenId,
-            seller:        signer,
-            payerWallet:   payerWallet,
-            startPrice:    startPrice,
-            endTime:       block.timestamp + durationSeconds,
-            highestBidder: address(0),
-            highestBid:    0,
-            finalized:     false
+            nftContract:          nftContract,
+            tokenId:              tokenId,
+            seller:               signer,
+            payerWallet:          payerWallet,
+            startPrice:           startPrice,
+            endTime:              block.timestamp + durationSeconds,
+            highestPayer:         address(0),
+            highestNftRecipient:  address(0),
+            highestBid:           0,
+            finalized:            false
         });
 
         emit AuctionCreated(auctionId, signer, payerWallet, tokenId, startPrice, block.timestamp + durationSeconds);
@@ -150,45 +189,49 @@ contract PaintAuction is ReentrancyGuard {
     // ─── bid ──────────────────────────────────────────────────────────────────
 
     /// @notice Place a bid on an active auction. Send native USDC as msg.value.
-    ///         The previous highest bidder is refunded automatically.
-    ///         No bracelet or relay needed — call directly from any wallet.
+    ///         Requires registerBidPayer so the NFT can be sent to your linked bracelet.
+    ///         Refunds go to the previous highest payer.
     function bid(uint256 auctionId) external payable nonReentrant {
         Auction storage a = auctions[auctionId];
+
+        address nfc = bidPayerToNfc[msg.sender];
+        require(nfc != address(0), "PaintAuction: payer not linked");
+        require(nfc != a.seller, "PaintAuction: seller cannot bid");
 
         // ── Checks ────────────────────────────────────────────────────────────
         require(!a.finalized, "PaintAuction: auction ended");
         require(block.timestamp < a.endTime, "PaintAuction: auction expired");
         require(msg.sender != a.seller, "PaintAuction: seller cannot bid");
 
-        if (a.highestBidder == address(0)) {
+        if (a.highestPayer == address(0)) {
             require(msg.value >= a.startPrice, "PaintAuction: below start price");
         } else {
             require(msg.value > a.highestBid, "PaintAuction: bid too low");
         }
 
         // ── Effects ───────────────────────────────────────────────────────────
-        address prevBidder = a.highestBidder;
-        uint256 prevBid    = a.highestBid;
+        address prevPayer = a.highestPayer;
+        uint256 prevBid   = a.highestBid;
 
-        a.highestBidder = msg.sender;
-        a.highestBid    = msg.value;
+        a.highestPayer        = msg.sender;
+        a.highestNftRecipient   = nfc;
+        a.highestBid            = msg.value;
 
-        // ── Interactions: refund previous bidder ──────────────────────────────
-        if (prevBidder != address(0)) {
-            (bool ok,) = prevBidder.call{value: prevBid}("");
+        // ── Interactions: refund previous payer ───────────────────────────────
+        if (prevPayer != address(0)) {
+            (bool ok,) = prevPayer.call{value: prevBid}("");
             if (!ok) {
-                // Graceful fallback: let them claim via claimRefund()
-                pendingRefunds[prevBidder] += prevBid;
+                pendingRefunds[prevPayer] += prevBid;
             }
         }
 
-        emit BidPlaced(auctionId, msg.sender, msg.value);
+        emit BidPlaced(auctionId, msg.sender, nfc, msg.value);
     }
 
     // ─── finalizeAuction ─────────────────────────────────────────────────────
 
     /// @notice Settle an expired auction. Permissionless — anyone may call.
-    ///         Transfers the NFT to the highest bidder and USDC to the payerWallet.
+    ///         Transfers the NFT to highestNftRecipient and USDC to payerWallet.
     ///         If no bids were placed the NFT is returned to the seller.
     function finalizeAuction(uint256 auctionId) external nonReentrant {
         Auction storage a = auctions[auctionId];
@@ -201,16 +244,13 @@ contract PaintAuction is ReentrancyGuard {
         a.finalized = true;
 
         // ── Interactions ──────────────────────────────────────────────────────
-        if (a.highestBidder == address(0)) {
-            // No bids — return NFT to seller
+        if (a.highestPayer == address(0)) {
             IERC721(a.nftContract).transferFrom(address(this), a.seller, a.tokenId);
         } else {
-            // Transfer NFT to winner
-            IERC721(a.nftContract).transferFrom(address(this), a.highestBidder, a.tokenId);
-            // Send proceeds to payerWallet
+            IERC721(a.nftContract).transferFrom(address(this), a.highestNftRecipient, a.tokenId);
             (bool ok,) = a.payerWallet.call{value: a.highestBid}("");
             require(ok, "PaintAuction: payment failed");
-            emit AuctionFinalized(auctionId, a.highestBidder, a.highestBid);
+            emit AuctionFinalized(auctionId, a.highestNftRecipient, a.highestPayer, a.highestBid);
         }
     }
 
@@ -244,7 +284,7 @@ contract PaintAuction is ReentrancyGuard {
 
         // ── Business logic checks ──────────────────────────────────────────────
         require(!a.finalized, "PaintAuction: already finalized");
-        require(a.highestBidder == address(0), "PaintAuction: bids exist");
+        require(a.highestPayer == address(0), "PaintAuction: bids exist");
 
         // ── Effects ───────────────────────────────────────────────────────────
         a.finalized = true;
