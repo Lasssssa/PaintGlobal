@@ -92,4 +92,19 @@ export const NFT_CONTRACT_ABI = [
     inputs: [],
     outputs: [{ name: "", type: "string" }],
   },
+  {
+    type: "function",
+    name: "approveWithNfc",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "tokenId", type: "uint256" },
+      { name: "spender", type: "address" },
+      { name: "v", type: "uint8" },
+      { name: "r", type: "bytes32" },
+      { name: "s", type: "bytes32" },
+      { name: "hash", type: "bytes32" },
+      { name: "message", type: "bytes" },
+    ],
+    outputs: [],
+  },
 ] as const;

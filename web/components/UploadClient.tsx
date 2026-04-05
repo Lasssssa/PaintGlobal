@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useRef, ChangeEvent, useEffect } from "react";
+import { useState, useRef, ChangeEvent, useEffect, useContext } from "react";
 import { useRouter } from "next/navigation";
 import { uploadImage, uploadMetadata } from "@/lib/storage";
 import { isNfcAvailable, signWithNfc, type NfcStatusEvent } from "@/lib/nfc";
+import { NfcIdentityContext } from "@/lib/nfc-context";
 
 type Step =
   | "idle"
@@ -16,15 +17,15 @@ type Step =
 
 const ACTIVE_STEPS: Step[] = [
   "uploading-image",
-  "uploading-meta",
   "nfc-signing",
+  "uploading-meta",
   "nfc-submitting",
 ];
 
 const STEP_LABELS: { step: Step; label: string }[] = [
   { step: "uploading-image", label: "Upload image → IPFS" },
-  { step: "uploading-meta", label: "Upload metadata → IPFS" },
   { step: "nfc-signing", label: "Tap your bracelet" },
+  { step: "uploading-meta", label: "Upload metadata → IPFS" },
   { step: "nfc-submitting", label: "Recording on-chain" },
 ];
 
@@ -40,6 +41,7 @@ const BUTTON_LABELS: Partial<Record<Step, string>> = {
 
 export default function UploadClient() {
   const router = useRouter();
+  const { setNfcAddress } = useContext(NfcIdentityContext);
 
   const [title, setTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -74,20 +76,10 @@ export default function UploadClient() {
       setStep("uploading-image");
       const imageCID = await uploadImage(file);
 
-      setStep("uploading-meta");
-      const metadataCID = await uploadMetadata({
-        title: title.trim(),
-        imageCID,
-        imageMime: file.type || "image/jpeg",
-        author: "nfc-bracelet",
-        timestamp: Date.now(),
-      });
-
-      const uri = `ipfs://${metadataCID}`;
-
+      // Sign with the bracelet BEFORE uploading metadata so we have
+      // the real bracelet address to store as author in IPFS.
       setStep("nfc-signing");
-      const nfcMessage = metadataCID.slice(0, 32);
-      const hexPayload = Array.from(new TextEncoder().encode(nfcMessage))
+      const hexPayload = Array.from(new TextEncoder().encode(imageCID.slice(0, 32)))
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
       const sig = await signWithNfc(hexPayload, (evt: NfcStatusEvent) => {
@@ -95,6 +87,20 @@ export default function UploadClient() {
           setStep("nfc-signing");
         }
       });
+
+      // Identify the user in context so the gallery shows the mint button immediately.
+      setNfcAddress(sig.signerAddress);
+
+      setStep("uploading-meta");
+      const metadataCID = await uploadMetadata({
+        title: title.trim(),
+        imageCID,
+        imageMime: file.type || "image/jpeg",
+        author: sig.signerAddress,
+        timestamp: Date.now(),
+      });
+
+      const uri = `ipfs://${metadataCID}`;
 
       setStep("nfc-submitting");
       const res = await fetch("/api/nfc/publish", {
